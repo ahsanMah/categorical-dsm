@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import torch.nn.functional as F
 from torch.utils.data import random_split
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
@@ -18,7 +19,7 @@ def get_dataset(config):
         )
         # FIXME: There's prolly a btter way to do this
         # Maybe have bins per class..?
-        N_CATEGORIES = 3
+        N_CATEGORIES = config.data.num_categories
         x = data.data.ravel() / 255.0
         _, BINS = np.histogram(x[::4], bins=N_CATEGORIES - 1)
 
@@ -44,9 +45,9 @@ def get_dataset(config):
             data, [int(0.9 * num_samples), int(0.1 * num_samples)]
         )
 
-        train_ds = torch.utils.data.DataLoader(train_data, batch_size=256)
+        train_ds = torch.utils.data.DataLoader(train_data, batch_size=config.training.batch_size)
 
-        val_ds = torch.utils.data.DataLoader(val_data, batch_size=1024)
+        val_ds = torch.utils.data.DataLoader(val_data, batch_size=config.eval.batch_size)
 
     else:
         raise NotImplementedError
