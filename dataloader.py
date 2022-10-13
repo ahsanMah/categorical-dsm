@@ -45,9 +45,13 @@ def get_dataset(config):
             data, [int(0.9 * num_samples), int(0.1 * num_samples)]
         )
 
-        train_ds = torch.utils.data.DataLoader(train_data, batch_size=config.training.batch_size)
+        train_ds = torch.utils.data.DataLoader(
+            train_data, batch_size=config.training.batch_size
+        )
 
-        val_ds = torch.utils.data.DataLoader(val_data, batch_size=config.eval.batch_size)
+        val_ds = torch.utils.data.DataLoader(
+            val_data, batch_size=config.eval.batch_size
+        )
 
     else:
         raise NotImplementedError
