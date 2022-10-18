@@ -29,13 +29,15 @@ def get_dataset(config):
             x = x.permute(3, 1, 2, 0).squeeze().float()
             return x
 
+        img_sz = config.data.image_size
+
         data = MNIST(
             "/tmp/mnist",
             download=True,
             transform=Compose(
                 (
                     ToTensor(),
-                    Resize((8, 8), interpolation=InterpolationMode.BILINEAR),
+                    Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR),
                     Lambda(to_1hot),
                 )
             ),

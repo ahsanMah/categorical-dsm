@@ -7,7 +7,9 @@ def get_config():
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 256
-    training.n_epochs = 100
+    training.n_iters = 100
+    training.log_freq = 10
+    training.eval_freq = 50
 
     # evaluation
     config.eval = evaluate = ml_collections.ConfigDict()
@@ -16,8 +18,7 @@ def get_config():
     # data
     config.data = data = ml_collections.ConfigDict()
     data.dataset = "MNIST"
-    data.image_size = 32
-    data.random_flip = True
+    data.image_size = 8
     data.num_categories = 3
 
     # model
@@ -33,13 +34,14 @@ def get_config():
     optim.lr = 2e-4
     optim.warmup = 5000
     optim.grad_clip = 1.0
+    optim.scheduler = None
 
     config.seed = 42
     if torch.cuda.is_available():
-        config.device =  torch.device("cuda:0") 
+        config.device = torch.device("cuda:0")
     elif torch.backends.mps.is_built():
-        config.device =  torch.device("mps") 
+        config.device = torch.device("mps")
     else:
-        config.device=torch.device("cpu")
-    
+        config.device = torch.device("cpu")
+
     return config
