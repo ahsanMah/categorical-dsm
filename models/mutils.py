@@ -63,6 +63,7 @@ def get_taus(config) -> torch.Tensor:
             np.log(config.model.tau_max),
             np.log(config.model.tau_min),
             config.model.num_scales,
+            dtype=np.float32,
         )
     )
     return taus

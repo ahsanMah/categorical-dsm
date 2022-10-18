@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from torch import nn
+import torch.nn.functional as F
 
 
 class GaussianFourierProjection(nn.Module):
