@@ -7,9 +7,11 @@ def get_config():
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 256
-    training.n_iters = 100
+    training.n_epochs = 10
     training.log_freq = 10
     training.eval_freq = 50
+    training.checkpoint_freq = 1000
+    training.snapshot_freq = 100000
 
     # evaluation
     config.eval = evaluate = ml_collections.ConfigDict()

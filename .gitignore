@@ -1,5 +1,8 @@
 # Repo specific ignores
-.ipynb_checkpoints
+workdir/
+**.ipynb_checkpoints
+**lightning_logs/
+**.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

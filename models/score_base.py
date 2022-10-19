@@ -26,7 +26,7 @@ class ScoreModel(pl.LightningModule):
 
         if self.optimization_opts.scheduler is not None:
             scheduler = torch.lr_scheduler.StepLR(
-                step_size=int(0.3 * self.training_opts.n_iters), gamma=0.3
+                step_size=int(0.3 * self.training_opts.n_epochs), gamma=0.3
             )
             return optimizer, scheduler
 
