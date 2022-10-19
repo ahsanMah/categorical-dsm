@@ -19,7 +19,11 @@ class ScoreModel(pl.LightningModule):
         self.training_opts = config.training
         self.optimization_opts = config.optim
 
-        self.register_buffer("taus", torch.tensor(get_taus(config)))
+        self.register_buffer(
+            "taus", torch.tensor(get_taus(config), device=config.device)
+        )
+
+        # self.save_hyperparameters()
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.optimization_opts.lr)
@@ -38,10 +42,12 @@ class ScoreModel(pl.LightningModule):
     def training_step(self, train_batch, _idxs) -> torch.Tensor:
         x, label = train_batch
         x = prob_to_logit(x)
-        idx = torch.randint(self.num_scales, size=(x.shape[0],), dtype=torch.long)
+        idx = torch.randint(
+            self.num_scales, size=(x.shape[0],), device=self.device, dtype=torch.long
+        )
         tau = self.taus[idx][:, None, None, None]
         x_noisy = log_concrete_sample(x, tau=tau)
-        t = torch.ones(x.shape[0], dtype=torch.float32) * idx.float()
+        t = torch.ones(x.shape[0], device=self.device) * idx.float()
 
         scores = self.forward(x_noisy, t)
 
@@ -54,10 +60,12 @@ class ScoreModel(pl.LightningModule):
     def validation_step(self, val_batch, _idxs) -> torch.Tensor:
         x, label = val_batch
         x = prob_to_logit(x)
-        idx = torch.randint(self.num_scales, size=(x.shape[0],), dtype=torch.long)
+        idx = torch.randint(
+            self.num_scales, size=(x.shape[0],), device=self.device, dtype=torch.long
+        )
         tau = self.taus[idx][:, None, None, None]
         x_noisy = log_concrete_sample(x, tau=tau)
-        t = torch.ones(x.shape[0]) * idx.float()
+        t = torch.ones(x.shape[0], device=self.device) * idx.float()
         scores = self.forward(x_noisy, t)
         loss = categorical_dsm_loss(x, x_noisy, scores, tau)
 

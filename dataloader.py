@@ -10,11 +10,13 @@ def get_dataset(config):
 
     if config.data.dataset.lower() == "mnist":
 
+        img_sz = config.data.image_size
+        
         data = MNIST(
             "/tmp/mnist",
             download=True,
             transform=Compose(
-                (ToTensor(), Resize((8, 8), interpolation=InterpolationMode.BILINEAR))
+                (ToTensor(), Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR))
             ),
         )
         # FIXME: There's prolly a btter way to do this
@@ -29,7 +31,6 @@ def get_dataset(config):
             x = x.permute(3, 1, 2, 0).squeeze().float()
             return x
 
-        img_sz = config.data.image_size
 
         data = MNIST(
             "/tmp/mnist",

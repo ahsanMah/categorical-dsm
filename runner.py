@@ -29,6 +29,7 @@ def train(config, workdir):
     )
 
     trainer = pl.Trainer(
+        accelerator=str(config.device),
         default_root_dir=workdir,
         max_epochs=config.training.n_epochs,
         gradient_clip_val=config.optim.grad_clip,
