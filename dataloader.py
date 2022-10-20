@@ -1,7 +1,7 @@
-import torch
 import numpy as np
+import torch
 import torch.nn.functional as F
-from torch.utils.data import random_split
+from torch.utils.data import random_split, DataLoader
 from torchvision.datasets import MNIST
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
 
@@ -11,12 +11,15 @@ def get_dataset(config):
     if config.data.dataset.lower() == "mnist":
 
         img_sz = config.data.image_size
-        
+
         data = MNIST(
             "/tmp/mnist",
             download=True,
             transform=Compose(
-                (ToTensor(), Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR))
+                (
+                    ToTensor(),
+                    Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR),
+                )
             ),
         )
         # FIXME: There's prolly a btter way to do this
@@ -30,7 +33,6 @@ def get_dataset(config):
             x = F.one_hot(x, num_classes=N_CATEGORIES)
             x = x.permute(3, 1, 2, 0).squeeze().float()
             return x
-
 
         data = MNIST(
             "/tmp/mnist",
@@ -48,13 +50,14 @@ def get_dataset(config):
             data, [int(0.9 * num_samples), int(0.1 * num_samples)]
         )
 
-        train_ds = torch.utils.data.DataLoader(
-            train_data, batch_size=config.training.batch_size
+        train_ds = DataLoader(
+            train_data,
+            batch_size=config.training.batch_size,
+            num_workers=8,
+            pin_memory=True,
         )
 
-        val_ds = torch.utils.data.DataLoader(
-            val_data, batch_size=config.eval.batch_size
-        )
+        val_ds = DataLoader(val_data, batch_size=config.eval.batch_size, num_workers=4)
 
     else:
         raise NotImplementedError
