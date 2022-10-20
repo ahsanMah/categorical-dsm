@@ -3,7 +3,6 @@ import numpy as np
 from torch import nn
 import torch.nn.functional as F
 
-
 class GaussianFourierProjection(nn.Module):
     """Gaussian Fourier embeddings for noise levels."""
 
@@ -76,6 +75,7 @@ class ResNeXtBlock(nn.Module):
         self.film3 = FiLMBlock(time_emb_size, num_channels)
 
     def forward(self, X, time_emb):
+
         Y = self.act(self.norm1(self.conv1(X)))
         Y = self.film1(Y, time_emb)
 

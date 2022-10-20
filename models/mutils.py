@@ -22,7 +22,7 @@ def log_concrete_sample(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.
     """
 
     eps = 1e-20
-    U = torch.rand(class_logits.shape, device=class_logits.device)
+    U = torch.rand_like(class_logits)
     gumbel_samples = -torch.log(-torch.log(U + eps) + eps)
 
     x = (gumbel_samples + class_logits) / tau

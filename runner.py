@@ -1,6 +1,8 @@
-import pdb
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
+# from pytorch_lightning.loggers import WandbLogger
+from torchinfo import summary
 
 from dataloader import get_dataset
 from models.resnext import ResNextpp
@@ -28,6 +30,23 @@ def train(config, workdir):
         every_n_train_steps=config.training.snapshot_freq,
     )
 
+    summary(
+        model,
+        input_data=[
+            torch.empty(
+                1,
+                config.data.num_categories,
+                config.data.image_size,
+                config.data.image_size,
+            ),
+            torch.empty(
+                1,
+            ),
+        ],
+    )
+
+    # wandb_logger = WandbLogger(log_model="all")
+
     trainer = pl.Trainer(
         accelerator=str(config.device),
         default_root_dir=workdir,
@@ -36,6 +55,9 @@ def train(config, workdir):
         val_check_interval=config.training.eval_freq,
         log_every_n_steps=config.training.log_freq,
         callbacks=[checkpoint_callback, snapshot_callback],
+        fast_dev_run=5 if config.devtest else 0,
+        enable_model_summary=False,
+        # num_sanity_val_steps=0,
     )
 
     trainer.fit(model, train_loader, val_loader)

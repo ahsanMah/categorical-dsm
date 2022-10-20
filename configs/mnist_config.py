@@ -28,7 +28,10 @@ def get_config():
     model.tau_min = 2.0
     model.tau_max = 10
     model.num_scales = 10
-    model.estimate_noise=False
+    model.estimate_noise = False
+    model.nf = 128
+    model.time_embedding_size = 32
+    model.layers = (2, 4, 2)
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
@@ -39,6 +42,7 @@ def get_config():
     optim.grad_clip = 1.0
     optim.scheduler = None
 
+    config.devtest=False
     config.seed = 42
     if torch.cuda.is_available():
         config.device = torch.device("cuda")
