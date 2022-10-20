@@ -18,6 +18,7 @@ class ScoreModel(pl.LightningModule):
         self.net = net
         self.training_opts = config.training
         self.optimization_opts = config.optim
+        self.K = config.data.num_categories
 
         self.register_buffer(
             "taus", torch.tensor(get_taus(config), device=config.device)
@@ -37,7 +38,21 @@ class ScoreModel(pl.LightningModule):
         return optimizer
 
     def forward(self, x, t):
-        return self.net(x, t)
+
+        if self.estimate_noise:
+            """Assumes that the model is predicting the `logit noise`
+            Following the log concrete gradient, we need to rescale
+            the logits to turn them into scores
+            """
+            tau = self.taus[t]
+            logit_noise_est = self.net(x, t)
+            score = (
+                tau * self.K * torch.softmax(logit_noise_est, dim=1, keepdim=True) - tau
+            )
+            return score
+        else:
+            # The model is predicting the score directly
+            return self.net(x, t)
 
     def training_step(self, train_batch, _idxs) -> torch.Tensor:
         x, label = train_batch
@@ -47,10 +62,15 @@ class ScoreModel(pl.LightningModule):
         )
         tau = self.taus[idx][:, None, None, None]
         x_noisy = log_concrete_sample(x, tau=tau)
-        t = torch.ones(x.shape[0], device=self.device) * idx.float()
+        t = torch.full(
+            (x.shape[0],),
+            idx,
+            dtype=torch.float32,
+            device=self.device,
+            requires_grad=False,
+        )
 
         scores = self.forward(x_noisy, t)
-
         loss = categorical_dsm_loss(x, x_noisy, scores, tau)
 
         self.log("loss", loss.item())
@@ -59,16 +79,31 @@ class ScoreModel(pl.LightningModule):
 
     def validation_step(self, val_batch, _idxs) -> torch.Tensor:
         x, label = val_batch
-        x = prob_to_logit(x)
-        idx = torch.randint(
-            self.num_scales, size=(x.shape[0],), device=self.device, dtype=torch.long
-        )
-        tau = self.taus[idx][:, None, None, None]
-        x_noisy = log_concrete_sample(x, tau=tau)
-        t = torch.ones(x.shape[0], device=self.device) * idx.float()
-        scores = self.forward(x_noisy, t)
-        loss = categorical_dsm_loss(x, x_noisy, scores, tau)
+        # x = prob_to_logit(x)
+        # idx = torch.randint(
+        #     self.num_scales, size=(x.shape[0],), device=self.device, dtype=torch.long
+        # )
+        # tau = self.taus[idx][:, None, None, None]
+        # x_noisy = log_concrete_sample(x, tau=tau)
+        # t = torch.ones(x.shape[0], device=self.device, requires_grad=False) * idx.float()
+        # scores = self.forward(x_noisy, t)
+        # loss = categorical_dsm_loss(x, x_noisy, scores, tau)
 
-        self.log("val_loss", loss.item(), prog_bar=True)
+        val_loss = self.training_step(val_batch, None)
 
-        return loss
+        self.log("val_loss", val_loss.item(), prog_bar=True)
+
+        for idx in range(0, self.num_scales, self.num_scales // 5):
+            t = torch.full(
+                (x.shape[0],),
+                idx,
+                dtype=torch.float32,
+                device=self.device,
+                requires_grad=False,
+            )
+            tau = self.taus[t.long()][:, None, None, None]
+            x_noisy = log_concrete_sample(x, tau=tau)
+            loss = categorical_dsm_loss(x, x_noisy, self.forward(x_noisy, t), tau)
+            self.log(f"per_tau_loss/{tau[0].item():.1f}", loss.item())
+
+        return val_loss
