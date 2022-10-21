@@ -1,12 +1,13 @@
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-# from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 from torchinfo import summary
 
 from dataloader import get_dataset
 from models.resnext import ResNextpp
 from models.score_base import ScoreModel
+import wandb
 
 
 def train(config, workdir):
@@ -45,7 +46,8 @@ def train(config, workdir):
         ],
     )
 
-    # wandb_logger = WandbLogger(log_model="all")
+    wandb.watch(model, log_freq=config.training.checkpoint_freq)
+    wandb_logger = WandbLogger(log_model="all", save_dir="wandb")
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
@@ -57,6 +59,7 @@ def train(config, workdir):
         callbacks=[checkpoint_callback, snapshot_callback],
         fast_dev_run=5 if config.devtest else 0,
         enable_model_summary=False,
+        logger=wandb_logger
         # num_sanity_val_steps=0,
     )
 

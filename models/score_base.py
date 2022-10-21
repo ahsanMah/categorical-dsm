@@ -1,10 +1,11 @@
+from distutils.command.config import config
 import pdb
 import ml_collections
 import pytorch_lightning as pl
 import torch
 from losses import categorical_dsm_loss
 
-from models.mutils import get_taus, log_concrete_sample, prob_to_logit
+from models.mutils import get_taus, log_concrete_sample, prob_to_logit, get_optimizer
 
 
 class ScoreModel(pl.LightningModule):
@@ -20,16 +21,18 @@ class ScoreModel(pl.LightningModule):
         self.optimization_opts = config.optim
         self.K = config.data.num_categories
 
-        self.register_buffer(
-            "taus", torch.tensor(get_taus(config),
-              device=self.device
-              )
-        )
+        self.register_buffer("taus", torch.tensor(get_taus(config), device=self.device))
 
         # self.save_hyperparameters()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.optimization_opts.lr)
+
+        optim = get_optimizer(self.optimization_opts.optimizer)
+        optimizer = optim(
+            self.parameters(),
+            lr=self.optimization_opts.lr,
+            weight_decay=self.optimization_opts.weight_decay,
+        )
 
         if self.optimization_opts.scheduler is not None:
             scheduler = torch.lr_scheduler.StepLR(
@@ -60,8 +63,9 @@ class ScoreModel(pl.LightningModule):
         x, label = train_batch
         x = prob_to_logit(x)
         idx = torch.randint(
-            self.num_scales, size=(x.shape[0],), 
-            device=self.device, 
+            self.num_scales,
+            size=(x.shape[0],),
+            device=self.device,
             dtype=torch.long,
             requires_grad=False,
         )
@@ -78,7 +82,6 @@ class ScoreModel(pl.LightningModule):
 
         val_loss = self.training_step(val_batch, None)
         self.log("val_loss", val_loss.item(), prog_bar=True)
-
 
         x, label = val_batch
         x = prob_to_logit(x)

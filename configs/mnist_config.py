@@ -7,11 +7,11 @@ def get_config():
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 256
-    training.n_epochs = 50
+    training.n_epochs = 100
     training.log_freq = 10
     training.eval_freq = 50
-    training.checkpoint_freq = 200
-    training.snapshot_freq = 1000
+    training.checkpoint_freq = 1000
+    training.snapshot_freq = 10000
 
     # evaluation
     config.eval = evaluate = ml_collections.ConfigDict()
@@ -29,16 +29,15 @@ def get_config():
     model.tau_max = 10
     model.num_scales = 10
     model.estimate_noise = False
-    model.nf = 128
+    model.nf = 64
     model.time_embedding_size = 32
-    model.layers = (2, 4, 2)
+    model.layers = (2, 4, 4, 2)
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
-    optim.weight_decay = 0
+    optim.weight_decay = 0.0
     optim.optimizer = "Adam"
     optim.lr = 2e-4
-    optim.warmup = 5000
     optim.grad_clip = 1.0
     optim.scheduler = None
 

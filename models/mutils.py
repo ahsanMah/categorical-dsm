@@ -1,6 +1,10 @@
 import torch
 import numpy as np
 
+optimizers = {"Adam": torch.optim.Adam, "AdamW": torch.optim.AdamW}
+
+def get_optimizer(name):
+    return optimizers[name]
 
 def prob_to_logit(probs):
     eps = 1e-5

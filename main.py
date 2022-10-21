@@ -3,9 +3,8 @@ from absl import flags
 from ml_collections.config_flags import config_flags
 import tensorflow as tf
 import wandb
-import ml_collections
-from pprint import pprint
 import runner
+import wandb
 
 FLAGS = flags.FLAGS
 
@@ -30,6 +29,8 @@ flags.mark_flags_as_required(["workdir", "config", "mode"])
 def main(argv):
     config = FLAGS.config
     workdir = FLAGS.workdir
+
+    wandb.init(project="categorical", config=config.to_dict(), resume="allow")
     runner.train(config, workdir)
 
 
