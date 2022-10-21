@@ -1,4 +1,5 @@
 # Repo specific ignores
+wandb/
 workdir/
 **.ipynb_checkpoints
 **lightning_logs/
