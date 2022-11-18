@@ -1,5 +1,7 @@
+import torch
 import torch.nn as nn
-from models.layers import ResNeXtBlock, FiLMBlock, GaussianFourierProjection
+
+from models.layers import FiLMBlock, GaussianFourierProjection, ResNeXtBlock
 
 
 class ResNextpp(nn.Module):
@@ -35,6 +37,8 @@ class ResNextpp(nn.Module):
         self.c2 = nn.ConvTranspose2d(nf, self.n_channels, kernel_size=3, stride=1)
 
     def forward(self, x, t):
+        t = t * (1 - 1e-5) + 1e-5
+        t = torch.log(t)
         temb = self.dense(self.proj(t))
         x = self.film1(self.c1(x), temb)
         
