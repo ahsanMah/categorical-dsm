@@ -10,7 +10,7 @@ def get_config():
     training.n_epochs = 100
     training.log_freq = 10
     training.eval_freq = 50
-    training.checkpoint_freq = 1000
+    training.checkpoint_freq = 200
     training.snapshot_freq = 10000
 
     # evaluation
@@ -35,8 +35,8 @@ def get_config():
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()
-    optim.weight_decay = 0.0
-    optim.optimizer = "Adam"
+    optim.weight_decay = 1e-4
+    optim.optimizer = "AdamW"
     optim.lr = 2e-4
     optim.grad_clip = 1.0
     optim.scheduler = None

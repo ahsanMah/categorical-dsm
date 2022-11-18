@@ -1,13 +1,15 @@
-import torch
+import os
+
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torchinfo import summary
 
+import wandb
 from dataloader import get_dataset
 from models.resnext import ResNextpp
 from models.score_base import ScoreModel
-import wandb
 
 
 def train(config, workdir):
@@ -40,14 +42,14 @@ def train(config, workdir):
                 config.data.image_size,
                 config.data.image_size,
             ),
-            torch.empty(
+            torch.zeros(
                 1,
             ),
         ],
     )
 
-    wandb.watch(model, log_freq=config.training.checkpoint_freq)
-    wandb_logger = WandbLogger(log_model="all", save_dir="wandb")
+    wandb.watch(model, log_freq=config.training.snapshot_freq//2, log="all")
+    wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
@@ -59,8 +61,12 @@ def train(config, workdir):
         callbacks=[checkpoint_callback, snapshot_callback],
         fast_dev_run=5 if config.devtest else 0,
         enable_model_summary=False,
-        logger=wandb_logger
+        logger=wandb_logger,
         # num_sanity_val_steps=0,
     )
 
-    trainer.fit(model, train_loader, val_loader)
+    # ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
+    # if not os.path.exists(ckpt_path):
+    ckpt_path = None
+
+    trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
