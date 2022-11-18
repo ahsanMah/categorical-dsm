@@ -1,11 +1,13 @@
-from distutils.command.config import config
-import pdb
+# import pdb
+
 import ml_collections
 import pytorch_lightning as pl
 import torch
-from losses import categorical_dsm_loss
+import torch.nn.functional as F
 
-from models.mutils import get_taus, log_concrete_sample, prob_to_logit, get_optimizer
+from losses import categorical_dsm_loss
+from models.mutils import (get_optimizer, get_taus, log_concrete_sample,
+                           prob_to_logit)
 
 
 class ScoreModel(pl.LightningModule):
@@ -39,7 +41,13 @@ class ScoreModel(pl.LightningModule):
                 step_size=int(0.3 * self.training_opts.n_epochs), gamma=0.3
             )
             return optimizer, scheduler
-
+        
+        ####WW####! FIXME: This problem still exists ###############
+        # I effectiveley CANNOT RESUME training is using Adam/AdamW
+        # Should help with loading the step variable
+        # as per https://github.com/pytorch/pytorch/issues/80809#issuecomment-1173481031
+        # optimizer.param_groups[0]['capturable'] = True
+        
         return optimizer
 
     def forward(self, x, t):
@@ -49,10 +57,10 @@ class ScoreModel(pl.LightningModule):
             Following the log concrete gradient, we need to rescale
             the logits to turn them into scores
             """
-            tau = self.taus[t]
-            logit_noise_est = self.net(x, t)
+            tau = self.taus[t.long()][:, None, None, None]
+            logit_noise_est = self.net(x, t.float())
             score = (
-                tau * self.K * torch.softmax(logit_noise_est, dim=1, keepdim=True) - tau
+                tau * self.K * F.softmax(logit_noise_est, dim=1) - tau
             )
             return score
         else:
@@ -60,6 +68,7 @@ class ScoreModel(pl.LightningModule):
             return self.net(x, t)
 
     def training_step(self, train_batch, _idxs) -> torch.Tensor:
+        
         x, label = train_batch
         x = prob_to_logit(x)
         idx = torch.randint(
@@ -99,3 +108,6 @@ class ScoreModel(pl.LightningModule):
             self.log(f"per_tau_loss/{tau[0].item():.1f}", loss.item())
 
         return val_loss
+
+    def scorer(self, x_batch):
+        pass

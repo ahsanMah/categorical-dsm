@@ -1,7 +1,8 @@
-import torch
 import numpy as np
-from torch import nn
+import torch
 import torch.nn.functional as F
+from torch import nn
+
 
 class GaussianFourierProjection(nn.Module):
     """Gaussian Fourier embeddings for noise levels."""
