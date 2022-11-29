@@ -6,10 +6,8 @@ optimizers = {"Adam": torch.optim.Adam, "AdamW": torch.optim.AdamW}
 def get_optimizer(name):
     return optimizers[name]
 
-def prob_to_logit(probs):
-    eps = 1e-5
-    l = torch.clamp(torch.log(probs), min=np.log(eps))
-    return l
+def onehot_to_logit(x_hot, eps = 1e-5):
+    return torch.clamp(torch.log(x_hot), min=np.log(eps))
 
 
 def log_concrete_sample(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
@@ -18,7 +16,7 @@ def log_concrete_sample(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.
     Working in the log domain helps improve stability.
 
     Args:
-        class_logits: Unnormalized class probabilites
+        class_logits: Unnormalized class "probabilites" (logits from 1-hot vectors)
         tau: Smoothing factor
 
     Returns:

@@ -21,7 +21,7 @@ def get_config():
     config.data = data = ml_collections.ConfigDict()
     data.dataset = "adult"
     data.categories = [9, 16, 7, 15, 6, 5, 2, 42]
-    data.cont_dim = 6
+    data.cont_dims = 6
 
     # model
     config.model = model = ml_collections.ConfigDict()
