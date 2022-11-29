@@ -1,7 +1,26 @@
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+#### Taken from Song [CITE]
+
+
+def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
+    assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
+    half_dim = embedding_dim // 2
+    # magic number 10000 is from transformers
+    emb = math.log(max_positions) / (half_dim - 1)
+    emb = torch.exp(
+        torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb
+    )
+    emb = timesteps.float()[:, None] * emb[None, :]
+    emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
+    if embedding_dim % 2 == 1:  # zero pad
+        emb = F.pad(emb, (0, 1), mode="constant")
+    assert emb.shape == (timesteps.shape[0], embedding_dim)
+    return emb
 
 
 class GaussianFourierProjection(nn.Module):
@@ -15,6 +34,9 @@ class GaussianFourierProjection(nn.Module):
     def forward(self, x):
         x_proj = x[:, None] * self.W[None, :] * 2 * self.pi
         return torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
+
+
+############
 
 
 class FiLMBlock(nn.Module):
@@ -90,3 +112,17 @@ class ResNeXtBlock(nn.Module):
             X = self.norm4(self.conv4(X))
 
         return self.act(Y + X)
+
+
+class TabMLPBlock(nn.Module):
+    
+    def __init__(self, d_in, d_out, act, dropout=0.1):
+
+        super().__init__()
+
+        self.act = F.gelu
+        self.dense = nn.Linear(d_in, d_out)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        return self.dropout(self.act(self.dense(x)))
