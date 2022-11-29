@@ -1,6 +1,5 @@
 import torch
 
-
 def log_concrete_grad(x_logit, class_logits, tau):
     K = class_logits.shape[1]
     logit_noise = class_logits - tau * x_logit
@@ -25,8 +24,10 @@ def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     x_noisy: probaility tensor of noisy image
     """
     batch_sz = x_logit.shape[0]
+    K = x_logit.shape[1]
     targets = log_concrete_grad(x_noisy, x_logit, tau=tau)
     loss = (scores - targets) ** 2
     loss = 0.5 * torch.sum(loss.reshape(batch_sz, -1), dim=-1)
-
+    loss /= K
+    
     return torch.mean(loss)
