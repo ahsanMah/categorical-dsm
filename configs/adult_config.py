@@ -25,6 +25,7 @@ def get_config():
 
     # model
     config.model = model = ml_collections.ConfigDict()
+    model.name = "tab-mlp"
     model.tau_min = 2.0
     model.tau_max = 10
     model.num_scales = 10
@@ -34,6 +35,7 @@ def get_config():
     model.layers = 4
     model.dropout = 0.1
     model.act = "gelu"
+    model.embedding_type = "fourier"
 
     # optimization
     config.optim = optim = ml_collections.ConfigDict()

@@ -2,19 +2,23 @@ import os
 
 import pytorch_lightning as pl
 import torch
+
+from pytorch_lightning.utilities.model_summary import ModelSummary
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torchinfo import summary
 
 import wandb
 from dataloader import get_dataset
-from models.resnext import ResNextpp
-from models.score_base import ScoreModel
-
+from models.score_base import ScoreModel, TabScoreModel
 
 def train(config, workdir):
 
-    model = ScoreModel(config, ResNextpp(config))
+    if "tab" in config.model.name:
+        model = TabScoreModel(config)
+    else:
+        model = ScoreModel(config)
+    
     train_loader, val_loader = get_dataset(config)
 
     # Checkpoint that saves periodically to allow for resuming later
@@ -33,22 +37,24 @@ def train(config, workdir):
         every_n_train_steps=config.training.snapshot_freq,
     )
 
-    summary(
-        model,
-        input_data=[
-            torch.empty(
-                1,
-                config.data.num_categories,
-                config.data.image_size,
-                config.data.image_size,
-            ),
-            torch.zeros(
-                1,
-            ),
-        ],
-    )
+    # summary(
+    #     model,
+    #     input_data=[
+    #         torch.empty(
+    #             1,
+    #             config.data.num_categories,
+    #             config.data.image_size,
+    #             config.data.image_size,
+    #         ),
+    #         torch.zeros(
+    #             1,
+    #         ),
+    #     ],
+    # )
+    
+    print(ModelSummary(model, max_depth=2))
 
-    wandb.watch(model, log_freq=config.training.snapshot_freq//2, log="all")
+    wandb.watch(model, log_freq=config.training.snapshot_freq//1000, log="all")
     wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
 
     trainer = pl.Trainer(

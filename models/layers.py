@@ -4,23 +4,39 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-#### Taken from Song [CITE]
+activations = {
+    "swish": F.silu,
+    "mish": F.mish,
+    "elu": F.elu,
+    "gelu": F.gelu,
+    "selu": F.selu,
+    "relu": F.relu,
+    "prelu": F.prelu,
+    "softplus": F.softplus,
+}
 
 
-def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
-    assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
-    half_dim = embedding_dim // 2
-    # magic number 10000 is from transformers
-    emb = math.log(max_positions) / (half_dim - 1)
-    emb = torch.exp(
-        torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb
-    )
-    emb = timesteps.float()[:, None] * emb[None, :]
-    emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
-    if embedding_dim % 2 == 1:  # zero pad
-        emb = F.pad(emb, (0, 1), mode="constant")
-    assert emb.shape == (timesteps.shape[0], embedding_dim)
-    return emb
+def get_act(name):
+    if name not in activations:
+        raise NotImplementedError(f"Activation function {name} does not exist!")
+    return activations[name]
+
+
+class PositionalEncoding(nn.Module):
+    """Positional embeddings for noise levels."""
+
+    def __init__(self, embedding_size=256, max_positions=10000):
+        super().__init__()
+
+        half_dim = embedding_size // 2
+        # magic number 10000 is from transformers
+        emb = math.log(max_positions) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, dtype=torch.float32) * -emb)
+        self.register_buffer("emb", emb)
+
+    def forward(self, timesteps):
+        x_emb = timesteps.float()[:, None] * self.emb[None, :]
+        return torch.cat([torch.sin(x_emb), torch.cos(x_emb)], dim=1)
 
 
 class GaussianFourierProjection(nn.Module):
@@ -28,7 +44,8 @@ class GaussianFourierProjection(nn.Module):
 
     def __init__(self, embedding_size=256, scale=1.0):
         super().__init__()
-        self.W = nn.Parameter(torch.randn(embedding_size) * scale, requires_grad=False)
+        half_dim = embedding_size // 2
+        self.W = nn.Parameter(torch.randn(half_dim) * scale, requires_grad=False)
         self.pi = torch.tensor(np.pi)
 
     def forward(self, x):
@@ -62,11 +79,12 @@ class ResNeXtBlock(nn.Module):
         bot_mul=1,
         use_1x1conv=True,
         strides=1,
+        act="gelu",
     ):
         super().__init__()
 
         # !FIXME: Get this from config
-        self.act = F.gelu
+        self.act = get_act(act)
 
         bot_channels = int(round(num_channels * bot_mul))
         self.conv1 = nn.Conv2d(num_channels, bot_channels, kernel_size=1, stride=1)
@@ -115,12 +133,11 @@ class ResNeXtBlock(nn.Module):
 
 
 class TabMLPBlock(nn.Module):
-    
     def __init__(self, d_in, d_out, act, dropout=0.1):
 
         super().__init__()
 
-        self.act = F.gelu
+        self.act = get_act(act)
         self.dense = nn.Linear(d_in, d_out)
         self.dropout = nn.Dropout(dropout)
 

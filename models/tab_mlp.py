@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
 
-from models.layers import get_timestep_embedding, GaussianFourierProjection, TabMLPBlock
+from models.layers import (
+    GaussianFourierProjection,
+    PositionalEncoding,
+    TabMLPBlock,
+)
 
 
 class TabMLP(nn.Module):
@@ -22,9 +26,10 @@ class TabMLP(nn.Module):
         self.num_classes = len(config.data.categories)
         self.input_dims = self.continuous_dim + sum(self.categorical_dims)
 
+        time_encoder = GaussianFourierProjection if config.model.embedding_type == "fourier" else PositionalEncoding
         self.time_embed = nn.Sequential(
-            GaussianFourierProjection(embedding_size=embedding_size),
-            nn.Linear(embedding_size * 2, ndims),
+            time_encoder(embedding_size=embedding_size),
+            nn.Linear(embedding_size, ndims),
             nn.SiLU(),
             nn.Linear(ndims, ndims),
         )

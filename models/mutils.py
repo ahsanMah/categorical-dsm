@@ -1,12 +1,86 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
+from models.tab_mlp import TabMLP
+from models.resnext import ResNextpp
 
 optimizers = {"Adam": torch.optim.Adam, "AdamW": torch.optim.AdamW}
+models = {"tab-mlp": TabMLP, "resnext": ResNextpp}
+
+
+"""
+Taken from Score SDE codebase
+https://github.com/yang-song/score_sde_pytorch/blob/cb1f359f4aadf0ff9a5e122fe8fffc9451fd6e44/models/layers.py#L54
+"""
+
+
+def variance_scaling(
+    scale, mode, distribution, in_axis=1, out_axis=0, dtype=torch.float32, device="cpu"
+):
+    def _compute_fans(shape, in_axis=1, out_axis=0):
+        receptive_field_size = np.prod(shape) / shape[in_axis] / shape[out_axis]
+        fan_in = shape[in_axis] * receptive_field_size
+        fan_out = shape[out_axis] * receptive_field_size
+        return fan_in, fan_out
+
+    def init(shape, dtype=dtype, device=device):
+        fan_in, fan_out = _compute_fans(shape, in_axis, out_axis)
+        if mode == "fan_in":
+            denominator = fan_in
+        elif mode == "fan_out":
+            denominator = fan_out
+        elif mode == "fan_avg":
+            denominator = (fan_in + fan_out) / 2
+        else:
+            raise ValueError(
+                "invalid mode for variance scaling initializer: {}".format(mode)
+            )
+        variance = scale / denominator
+        if distribution == "normal":
+            return torch.randn(*shape, dtype=dtype, device=device) * np.sqrt(variance)
+        elif distribution == "uniform":
+            return (
+                torch.rand(*shape, dtype=dtype, device=device) * 2.0 - 1.0
+            ) * np.sqrt(3 * variance)
+        else:
+            raise ValueError("invalid distribution for variance scaling initializer")
+
+    return init
+
+
+def build_default_init_fn(scale=1.0):
+    """The same initialization used in DDPM."""
+    scale = 1e-10 if scale == 0 else scale
+    init_fn = variance_scaling(scale, "fan_avg", "uniform")
+
+    def init_weights(module):
+        if isinstance(module, nn.Linear):
+            with torch.no_grad():
+                module.weight.data = init_fn(module.weight.shape)
+
+            if module.bias is not None:
+                module.bias.data.zero_()
+
+    return init_weights
+
+
+def get_model(config):
+    name = config.model.name
+    if name not in models:
+        raise NotImplementedError(f"Model {name} does not exist!")
+
+    return models[name](config)
+
 
 def get_optimizer(name):
+    if name not in optimizers:
+        raise NotImplementedError(f"Optimizer {name} does not exist!")
+
     return optimizers[name]
 
-def onehot_to_logit(x_hot, eps = 1e-5):
+
+def onehot_to_logit(x_hot, eps=1e-5):
     return torch.clamp(torch.log(x_hot), min=np.log(eps))
 
 

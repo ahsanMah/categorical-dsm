@@ -1,30 +1,35 @@
-# import pdb
+import pdb
 import functools
 import ml_collections
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 
+
 from losses import categorical_dsm_loss
-from models.mutils import get_optimizer, get_taus, log_concrete_sample, onehot_to_logit
+from models.mutils import (
+    get_model,
+    get_optimizer,
+    get_taus,
+    log_concrete_sample,
+    onehot_to_logit,
+    build_default_init_fn
+)
 
 
 class ScoreModel(pl.LightningModule):
-    def __init__(self, config: ml_collections.ConfigDict, net: torch.nn.Module) -> None:
+    def __init__(self, config: ml_collections.ConfigDict) -> None:
         super().__init__()
 
         self.model_config = config.model
         for model_attr, val in config.model.to_dict().items():
             setattr(self, model_attr, val)
 
-        self.net = net
+        self.net = get_model(config)
         self.training_opts = config.training
         self.optimization_opts = config.optim
         self.K = config.data.num_categories
-
         self.register_buffer("taus", torch.tensor(get_taus(config), device=self.device))
-
-        # self.save_hyperparameters()
 
     def configure_optimizers(self):
 
@@ -111,7 +116,7 @@ class ScoreModel(pl.LightningModule):
 
 
 class TabScoreModel(pl.LightningModule):
-    def __init__(self, config: ml_collections.ConfigDict, net: torch.nn.Module) -> None:
+    def __init__(self, config: ml_collections.ConfigDict) -> None:
         super().__init__()
 
         self.categories = config.data.categories
@@ -122,13 +127,15 @@ class TabScoreModel(pl.LightningModule):
         for model_attr, val in config.model.to_dict().items():
             setattr(self, model_attr, val)
 
-        self.net = net
+        self.net = get_model(config)
         self.training_opts = config.training
         self.optimization_opts = config.optim
 
         self.register_buffer("taus", torch.tensor(get_taus(config), device=self.device))
 
-        # self.save_hyperparameters()
+        # pdb.set_trace()
+        default_init_fn = build_default_init_fn()
+        self.net.apply(default_init_fn)
 
     def configure_optimizers(self):
 
@@ -160,8 +167,8 @@ class TabScoreModel(pl.LightningModule):
     def training_step(self, train_batch, _idxs) -> torch.Tensor:
 
         x, label = train_batch
-        x_cont = x[:, :self.continuous_dims]
-        x_cat = x[:, self.continuous_dims:]
+        x_cont = x[:, : self.continuous_dims]
+        x_cat = x[:, self.continuous_dims :]
         x_cat = onehot_to_logit(x_cat)
 
         idx = torch.randint(
@@ -172,23 +179,26 @@ class TabScoreModel(pl.LightningModule):
             requires_grad=False,
         )
         tau = self.taus[idx][:, None]
-        splitter = functools.partial(torch.split, split_size_or_sections=self.categories, dim=1)
+        splitter = functools.partial(
+            torch.split, split_size_or_sections=self.categories, dim=1
+        )
 
-        x_noisy = torch.cat([
-            log_concrete_sample(x_cat_hot, tau=tau)
-            for x_cat_hot in splitter(x_cat)
-        ], dim=1)
-        
+        x_noisy = torch.cat(
+            [log_concrete_sample(x_cat_hot, tau=tau) for x_cat_hot in splitter(x_cat)],
+            dim=1,
+        )
+
         x_noisy = torch.cat((x_cont, x_noisy), dim=1)
         scores = self.forward(x_noisy, idx.float())
 
         loss = 0.0
-        cat_scores = scores[:, self.continuous_dims:]
-        x_cat_pert = x_noisy[:, self.continuous_dims:]
-        for x_cat_logits, x_cat_noisy, x_cat_scores in zip(*map(splitter, [x_cat, x_cat_pert, cat_scores])):
+        cat_scores = scores[:, self.continuous_dims :]
+        x_cat_pert = x_noisy[:, self.continuous_dims :]
+        for x_cat_logits, x_cat_noisy, x_cat_scores in zip(
+            *map(splitter, [x_cat, x_cat_pert, cat_scores])
+        ):
             loss += categorical_dsm_loss(x_cat_logits, x_cat_noisy, x_cat_scores, tau)
 
-    
         self.log("loss", loss.item())
 
         return loss
