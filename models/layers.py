@@ -57,15 +57,20 @@ class GaussianFourierProjection(nn.Module):
 
 
 class FiLMBlock(nn.Module):
-    def __init__(self, time_dim_sz, num_channels):
+    def __init__(self, time_dim_sz, num_channels, img_input=False):
         super().__init__()
         self.c = num_channels
         self.dense = nn.Linear(time_dim_sz, num_channels * 2)
+        self.img_input = img_input
 
     def forward(self, X, time_emb):
         gamma, beta = torch.split(self.dense(time_emb), (self.c, self.c), dim=1)
         # print(gamma[:,:,None, None].shape)
-        return X * gamma[:, :, None, None] + beta[:, :, None, None]
+        
+        if self.img_input:
+            return X *gamma[:, :, None, None] + beta[:, :, None, None]
+
+        return X * gamma + beta
 
 
 class ResNeXtBlock(nn.Module):
@@ -143,3 +148,28 @@ class TabMLPBlock(nn.Module):
 
     def forward(self, x):
         return self.dropout(self.act(self.dense(x)))
+
+
+class TabResBlockpp(nn.Module):
+    def __init__(self, d_in, d_out, time_emb_sz, act="relu", dropout=0.1):
+
+        super().__init__()
+
+        self.norm = nn.GroupNorm(num_groups=8, num_channels=d_in)
+        self.dense_1 = nn.Linear(d_in, d_out)
+        self.act = get_act(act)
+        self.film = FiLMBlock(time_emb_sz, d_out)
+        # self.dense_cond = nn.Linear(time_emb_sz, d_out)
+        self.dropout = nn.Dropout(dropout)
+        self.dense_2 = nn.Linear(d_out, d_out)
+
+    def forward(self, x, t):
+
+        h = self.act(self.norm(x))
+        h = self.dense_1(h)
+        # h += self.dense_cond(t)
+        h = self.film(h, t)
+        h = self.dropout(h)
+        h = self.dense_2(h)
+
+        return x + h
