@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split, TensorDataset
+from torch.utils.data import DataLoader, random_split, TensorDataset, Subset
 from torchvision.datasets import MNIST, Omniglot, FashionMNIST
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -10,9 +10,11 @@ from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
 
 
-def get_dataset(config):
+def get_dataset(config, mode="train"):
 
+    generator=torch.Generator().manual_seed(42)
     dataset_name = config.data.dataset.lower()
+
 
     if dataset_name in ["adult"]:
         data = build_tabular_ds(dataset_name)
@@ -77,8 +79,12 @@ def get_dataset(config):
 
     num_samples = len(data)
     train_data, val_data = random_split(
-        data, [0.9, 0.1]
+        data, [0.9, 0.1], generator=generator
     )
+
+    if mode == "train":
+        inlier_idxs = [idx for idx, (x,y) in enumerate(train_data) if y.argmax() == 0]
+        train_data = Subset(train_data, inlier_idxs)
 
     train_ds = DataLoader(
         train_data,
@@ -96,12 +102,14 @@ def get_dataset(config):
 
     return train_ds, val_ds
 
+# !TODO: Have this load raw data and labels separately
 def load_dataset(name):
     if name in ["adult"]:
         return pd.read_csv(f"data/{name}.csv").dropna()
 
 def build_tabular_ds(name):
     raw_data = load_dataset(name)
+
     categorical_columns_selector = selector(dtype_include=object)
     continuous_columns_selector = selector(dtype_include=[int, float])
     categorical_features = categorical_columns_selector(raw_data)
@@ -112,6 +120,7 @@ def build_tabular_ds(name):
         transformers=[
             ("num", StandardScaler(), continuous_features),
             ("cat", encoder, categorical_features),
+            #!FIXME: put oneot to logit here
         ]
     )
     
