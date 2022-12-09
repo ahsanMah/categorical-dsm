@@ -6,14 +6,15 @@ import torch
 import torch.nn.functional as F
 
 
-from losses import categorical_dsm_loss
+from losses import KL_loss, categorical_dsm_loss, continuous_dsm_loss, log_concrete_grad
 from models.mutils import (
     get_model,
     get_optimizer,
     get_taus,
+    get_sigmas,
     log_concrete_sample,
     onehot_to_logit,
-    build_default_init_fn
+    build_default_init_fn,
 )
 
 
@@ -131,7 +132,12 @@ class TabScoreModel(pl.LightningModule):
         self.training_opts = config.training
         self.optimization_opts = config.optim
 
+        self.register_buffer("sigmas", torch.tensor(get_sigmas(config)))
         self.register_buffer("taus", torch.tensor(get_taus(config), device=self.device))
+
+        self.splitter = functools.partial(
+            torch.split, split_size_or_sections=self.categories, dim=1
+        )
 
         # pdb.set_trace()
         default_init_fn = build_default_init_fn()
@@ -161,52 +167,160 @@ class TabScoreModel(pl.LightningModule):
         return optimizer
 
     def forward(self, x, t):
-        # The model is predicting the score directly
-        return self.net(x, t)
 
-    def training_step(self, train_batch, _idxs) -> torch.Tensor:
+        if self.estimate_noise:
+            # The model is predicting the logit noise directly
+            # Will be trained to only match the noise only via KL div loss etc.
+            return self.net(x, t)
 
-        x, label = train_batch
-        x_cont = x[:, : self.continuous_dims]
-        x_cat = x[:, self.continuous_dims :]
+        # Predicting the scores
+        return self.score_fn(x, t)
+
+    def score_fn(self, x, t):
+        """Assumes that the model is predicting the `logit noise`
+        Following the log concrete gradient, we need to rescale
+        the logits to turn them into scores
+        """
+        tau = self.taus[t.long()][:, None]
+        logit_noise_est = self.net(x, t.float())
+        cat_logits = logit_noise_est[:, self.continuous_dims :]
+        cont_logits = logit_noise_est[:, : self.continuous_dims]
+
+        score = torch.cat(
+            [l.shape[1] * F.softmax(l, dim=1) for l in self.splitter(cat_logits)],
+            dim=1,
+        )
+
+        score = torch.cat((cont_logits, cat_logits), dim=1)
+        score = tau * score - tau
+
+        return score
+
+    def single_loss_step(self, x_batch, timestep_idxs):
+
+        tau = self.taus[timestep_idxs][:, None]
+        sigma = self.sigmas[timestep_idxs][:, None]
+
+        x_cont = x_batch[:, : self.continuous_dims]
+        x_cat = x_batch[:, self.continuous_dims :]
         x_cat = onehot_to_logit(x_cat)
 
-        idx = torch.randint(
+        # Add noise appropriately
+        x_noisy = torch.cat(
+            [
+                log_concrete_sample(x_cat_hot, tau=tau)
+                for x_cat_hot in self.splitter(x_cat)
+            ],
+            dim=1,
+        )
+
+        if x_cont.shape[1] > 0:
+            # g=torch.Generator(device=x_cont.device)
+            # g.manual_seed(42)
+            # cont_noise = torch.randn(x_cont.shape, generator=g, device=x_cont.device) * sigma
+            cont_noise = torch.randn_like(x_cont) * sigma
+            x_cont_noisy = x_cont + cont_noise
+            x_noisy = torch.cat((x_cont_noisy, x_noisy), dim=1)
+
+        scores = self.forward(x_noisy, timestep_idxs.float())
+
+        # Compute losses
+        cat_loss = 0.0
+        cont_loss = 0.0
+        rel_err = 0.0
+
+        # Categorical loss
+        cat_scores = scores[:, self.continuous_dims :]
+        x_cat_pert = x_noisy[:, self.continuous_dims :]
+        for i, (x_cat_logits, x_cat_noisy, x_cat_scores) in enumerate(
+            zip(*map(self.splitter, [x_cat, x_cat_pert, cat_scores]))
+        ):
+            # pdb()
+            if self.estimate_noise:
+                l, err = KL_loss(x_cat_logits, x_cat_noisy, x_cat_scores, tau)
+            else:
+                l, err = categorical_dsm_loss(
+                    x_cat_logits, x_cat_noisy, x_cat_scores, tau
+                )
+            cat_loss += l
+            rel_err += err
+            # self.log(f"loss/cat_idx={i}", l.item())
+            # print(categorical_dsm_loss(x_cat_logits, x_cat_noisy, x_cat_scores, tau))
+
+        # Continuous loss
+        if x_cont.shape[1] > 0:
+            cont_scores = scores[:, : self.continuous_dims]
+            cont_loss += continuous_dsm_loss(cont_noise, cont_scores, sigma)
+
+        return cat_loss, cont_loss, rel_err
+
+    def training_step(self, train_batch, batch_idxs) -> torch.Tensor:
+
+        x, label = train_batch
+
+        idxs = torch.randint(
             self.num_scales,
             size=(x.shape[0],),
             device=self.device,
             dtype=torch.long,
             requires_grad=False,
         )
-        tau = self.taus[idx][:, None]
-        splitter = functools.partial(
-            torch.split, split_size_or_sections=self.categories, dim=1
-        )
 
-        x_noisy = torch.cat(
-            [log_concrete_sample(x_cat_hot, tau=tau) for x_cat_hot in splitter(x_cat)],
-            dim=1,
-        )
+        cat_loss, cont_loss, rel_err = self.single_loss_step(x, idxs)
 
-        x_noisy = torch.cat((x_cont, x_noisy), dim=1)
-        scores = self.forward(x_noisy, idx.float())
+        loss = cat_loss + cont_loss
 
-        loss = 0.0
-        cat_scores = scores[:, self.continuous_dims :]
-        x_cat_pert = x_noisy[:, self.continuous_dims :]
-        for x_cat_logits, x_cat_noisy, x_cat_scores in zip(
-            *map(splitter, [x_cat, x_cat_pert, cat_scores])
-        ):
-            loss += categorical_dsm_loss(x_cat_logits, x_cat_noisy, x_cat_scores, tau)
-
+        # if self.training:
         self.log("loss", loss.item())
+        if cat_loss > 0:
+            self.log("loss/cat", cat_loss.item())
+        if cont_loss > 0:
+            self.log("loss/cont", cont_loss.item())
+
+        self.log("rel_err", rel_err.item())
 
         return loss
 
-    def validation_step(self, val_batch, _idxs) -> torch.Tensor:
+    def validation_step(self, val_batch, batch_idxs) -> torch.Tensor:
+        x_batch, label = val_batch
+        # print(label, label.argmax(dim=1) == 0)
+        x_batch = x_batch[label.argmax(dim=1) == 0]
+        # idxs = torch.randint(
+        #     self.num_scales,
+        #     size=(x.shape[0],),
+        #     device=self.device,
+        #     dtype=torch.long,
+        #     requires_grad=False,
+        # )
+        # val_loss = self.single_loss_step((x_batch, None), idxs)
+        # self.log("val_loss", val_loss.item(), prog_bar=True)
 
-        val_loss = self.training_step(val_batch, None)
+        val_loss = 0.0
+        val_err = 0.0
+
+        t = torch.ones(
+            size=(x_batch.shape[0],),
+            device=self.device,
+            dtype=torch.long,
+            requires_grad=False,
+        )
+
+        # timesteps_to_log = 3
+        for idx in range(0, self.num_scales):
+            cat_loss, cont_loss, rel_err = self.single_loss_step(x_batch, t * idx)
+            loss = cat_loss + cont_loss
+            val_loss += loss
+            val_err += rel_err
+
+            if idx % 3 == 0:
+                self.log(f"val_loss/{idx}", loss.item())
+                self.log(f"val_err/{idx}", rel_err.item())
+
+        val_loss /= self.num_scales
+        val_err /= self.num_scales
+        
         self.log("val_loss", val_loss.item(), prog_bar=True)
+        self.log("val_err", val_err.item())
 
         return val_loss
 

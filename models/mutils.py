@@ -2,11 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from models.tab_resnet import TabResNet
 from models.tab_mlp import TabMLP
 from models.resnext import ResNextpp
 
-optimizers = {"Adam": torch.optim.Adam, "AdamW": torch.optim.AdamW}
-models = {"tab-mlp": TabMLP, "resnext": ResNextpp}
+optimizers = {
+    "Adam": torch.optim.Adam,
+    "AdamW": torch.optim.AdamW,
+    "RAdam": torch.optim.RAdam,
+}
+models = {"tab-resnet": TabResNet, "tab-mlp": TabMLP, "resnext": ResNextpp}
 
 
 """
@@ -96,6 +101,10 @@ def log_concrete_sample(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.
     Returns:
         torch.Tensor: Continuous samples
     """
+    # # For debugging
+    # g=torch.Generator(device=class_logits.device)
+    # g.manual_seed(42)
+    # U = torch.rand(class_logits.shape, generator=g, device=class_logits.device)
 
     eps = 1e-20
     U = torch.rand_like(class_logits)
@@ -143,3 +152,23 @@ def get_taus(config) -> torch.Tensor:
         )
     )
     return taus
+
+
+def get_sigmas(config) -> torch.Tensor:
+    """Generate sigmas with an exponential schedule seen in NCSN
+
+    Args:
+        config: Configuration file that lets us know min/max
+
+    Returns:
+        sigmas: Tensor of sigmas in *descending* order
+    """
+    sigmas = np.exp(
+        np.linspace(
+            np.log(config.model.sigma_max),
+            np.log(config.model.sigma_min),
+            config.model.num_scales,
+            dtype=np.float32,
+        )
+    )
+    return sigmas

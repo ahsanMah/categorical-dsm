@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 def log_concrete_grad(x_logit, class_logits, tau):
     K = class_logits.shape[1]
@@ -29,5 +30,38 @@ def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     loss = (scores - targets) ** 2
     loss = 0.5 * torch.sum(loss.reshape(batch_sz, -1), dim=-1)
     loss /= K
+
+    with torch.no_grad():
+        rel_err = (scores.mean(dim=0) - targets.mean(dim=0)).abs()
+        rel_err = (rel_err / targets.abs().mean(dim=0)).mean()
     
+    return torch.mean(loss), rel_err
+
+kl_loss_fn = torch.nn.KLDivLoss(reduction="batchmean")
+def KL_loss(x_logit, x_noisy, model_out, tau):
+    """
+    x_logit: Logit probs of original sample
+    x_noisy: probaility tensor of noisy image
+    """
+    batch_sz = x_logit.shape[0]
+    K = x_logit.shape[1]
+    targets = F.softmax(x_logit - tau * x_noisy)
+    loss = kl_loss_fn(F.log_softmax(model_out), targets)
+
+    with torch.no_grad():
+        scores = -tau + tau * K * torch.softmax(model_out, dim=1)
+        targets = log_concrete_grad(x_noisy, x_logit, tau=tau)
+        rel_err = (scores.mean(dim=0) - targets.mean(dim=0)).abs()
+        rel_err = (rel_err / targets.abs().mean(dim=0)).mean()
+    
+    return loss, rel_err
+
+def continuous_dsm_loss(noise, scores, sigmas):
+    batch_sz = scores.shape[0]
+    D = scores.shape[1]
+    target = - noise / (sigmas ** 2)
+    loss = (scores - target) ** 2
+    loss = torch.mean(loss.reshape(batch_sz, -1), dim=-1)
+    # loss *= sigmas[:,0] ** 2
+
     return torch.mean(loss)
