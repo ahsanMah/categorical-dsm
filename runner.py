@@ -11,14 +11,18 @@ from torchinfo import summary
 import wandb
 from dataloader import get_dataset
 from models.score_base import ScoreModel, TabScoreModel
+from models.ema import EMA
+
 
 def train(config, workdir):
+
+    pl.utilities.seed.seed_everything(config.seed)
 
     if "tab" in config.model.name:
         model = TabScoreModel(config)
     else:
         model = ScoreModel(config)
-    
+
     train_loader, val_loader = get_dataset(config)
 
     # Checkpoint that saves periodically to allow for resuming later
@@ -37,6 +41,17 @@ def train(config, workdir):
         every_n_train_steps=config.training.snapshot_freq,
     )
 
+    callback_list = [checkpoint_callback, snapshot_callback]
+    
+    if config.model.ema_rate > 0.0:
+        ema_callback = EMA(
+            decay=0.999,
+            evaluate_ema_weights_instead=True,
+            save_ema_weights_in_callback_state=True,
+        )
+        callback_list.append(ema_callback)
+
+
     # summary(
     #     model,
     #     input_data=[
@@ -51,26 +66,26 @@ def train(config, workdir):
     #         ),
     #     ],
     # )
-    
+
     print(ModelSummary(model, max_depth=2))
 
-    wandb.watch(model, log_freq=config.training.snapshot_freq//1000, log="all")
+    wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
     wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
         default_root_dir=workdir,
-        max_epochs=config.training.n_epochs,
+        # max_epochs=config.training.n_epochs,
+        max_steps=config.training.n_steps,
         gradient_clip_val=config.optim.grad_clip,
         val_check_interval=config.training.eval_freq,
         log_every_n_steps=config.training.log_freq,
-        callbacks=[checkpoint_callback, snapshot_callback],
+        callbacks=callback_list,
         fast_dev_run=5 if config.devtest else 0,
         enable_model_summary=False,
         logger=wandb_logger,
         # num_sanity_val_steps=0,
     )
-
     # ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
     # if not os.path.exists(ckpt_path):
     ckpt_path = None

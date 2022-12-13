@@ -17,6 +17,8 @@ from models.mutils import (
     build_default_init_fn,
 )
 
+from models.ema import EMA
+
 
 class ScoreModel(pl.LightningModule):
     def __init__(self, config: ml_collections.ConfigDict) -> None:
@@ -143,6 +145,24 @@ class TabScoreModel(pl.LightningModule):
         default_init_fn = build_default_init_fn()
         self.net.apply(default_init_fn)
 
+    def on_load_checkpoint(self, checkpoint) -> None:
+        '''This is a hack to load the EMA weights into the model. 
+        The EMA weights are stored in the checkpoint as a callback.
+        The EMA callback has a method called `replace_model_weights` that
+        effectively loads the weights into the model. 
+        However, there is no way to access the callback from the model.
+        So, we need to create an instance of the callback, load the weights
+        into the callback, and then call the method to load the weights into
+        the model.
+        '''
+        # print(self.net.state_dict()['time_embed.0.W'])
+        if "EMA" in checkpoint["callbacks"]:
+            ema_callback = EMA(decay=0)
+            ema_callback.load_state_dict(checkpoint["callbacks"]["EMA"])
+            ema_callback.replace_model_weights(self)
+            print("Restored checkpoint from EMA...")
+            del ema_callback
+
     def configure_optimizers(self):
 
         optim = get_optimizer(self.optimization_opts.optimizer)
@@ -184,15 +204,15 @@ class TabScoreModel(pl.LightningModule):
         tau = self.taus[t.long()][:, None]
         logit_noise_est = self.net(x, t.float())
         cat_logits = logit_noise_est[:, self.continuous_dims :]
-        cont_logits = logit_noise_est[:, : self.continuous_dims]
+        cont_score = logit_noise_est[:, : self.continuous_dims]
 
-        score = torch.cat(
+        cat_score = torch.cat(
             [l.shape[1] * F.softmax(l, dim=1) for l in self.splitter(cat_logits)],
             dim=1,
         )
+        cat_score = tau * cat_score - tau
 
-        score = torch.cat((cont_logits, cat_logits), dim=1)
-        score = tau * score - tau
+        score = torch.cat((cont_score, cat_score), dim=1)
 
         return score
 
@@ -324,5 +344,22 @@ class TabScoreModel(pl.LightningModule):
 
         return val_loss
 
-    def scorer(self, x_batch):
-        pass
+    @torch.no_grad()
+    def scorer(self, x_batch, denoise_step=False):
+        self.eval()
+        N = self.num_scales
+        score_norms = torch.empty(N, x_batch.shape[0], device=x_batch.device)
+        
+        # Single denoising step
+        if denoise_step:
+            vec_t = torch.ones(x_batch.shape[0], device=x_batch.device) * (N-1)
+            score = self.score_fn(x_batch, vec_t) * 1e-2
+            x_batch += score
+            x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
+            
+        for idx in range(N):
+            vec_t = torch.ones((x_batch.shape[0],), device=x_batch.device, dtype=torch.long) * idx
+            score = self.score_fn(x_batch, vec_t)
+            score_norms[idx, :] = torch.linalg.norm(score.reshape(score.shape[0],-1), dim=1)
+        
+        return score_norms
