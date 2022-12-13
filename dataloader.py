@@ -9,6 +9,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
 
+tabular_datasets = {"adult": "adult.csv"}
+
 
 def get_dataset(config, mode="train"):
 
@@ -16,7 +18,7 @@ def get_dataset(config, mode="train"):
     dataset_name = config.data.dataset.lower()
 
 
-    if dataset_name in ["adult"]:
+    if dataset_name in tabular_datasets:
         data = build_tabular_ds(dataset_name)
     
     # If a torchvision dataset
@@ -82,7 +84,7 @@ def get_dataset(config, mode="train"):
         data, [0.9, 0.1], generator=generator
     )
 
-    if mode == "train":
+    if mode == "train" and dataset_name in tabular_datasets:
         inlier_idxs = [idx for idx, (x,y) in enumerate(train_data) if y.argmax() == 0]
         train_data = Subset(train_data, inlier_idxs)
 

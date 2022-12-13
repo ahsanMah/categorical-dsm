@@ -45,8 +45,8 @@ def KL_loss(x_logit, x_noisy, model_out, tau):
     """
     batch_sz = x_logit.shape[0]
     K = x_logit.shape[1]
-    targets = F.softmax(x_logit - tau * x_noisy)
-    loss = kl_loss_fn(F.log_softmax(model_out), targets)
+    targets = F.softmax(x_logit - tau * x_noisy, dim=1)
+    loss = kl_loss_fn(F.log_softmax(model_out, dim=1), targets)
 
     with torch.no_grad():
         scores = -tau + tau * K * torch.softmax(model_out, dim=1)
