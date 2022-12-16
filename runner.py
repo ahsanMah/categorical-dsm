@@ -10,9 +10,9 @@ from torchinfo import summary
 
 import wandb
 from dataloader import get_dataset
-from models.score_base import ScoreModel, TabScoreModel
+from models.score_base import VisionScoreModel, TabScoreModel
 from models.ema import EMA
-
+import logging
 
 def train(config, workdir):
 
@@ -21,7 +21,7 @@ def train(config, workdir):
     if "tab" in config.model.name:
         model = TabScoreModel(config)
     else:
-        model = ScoreModel(config)
+        model = VisionScoreModel(config)
 
     train_loader, val_loader = get_dataset(config)
 
@@ -43,31 +43,33 @@ def train(config, workdir):
 
     callback_list = [checkpoint_callback, snapshot_callback]
     
-    if config.model.ema_rate > 0.0:
-        ema_callback = EMA(
-            decay=0.999,
-            evaluate_ema_weights_instead=True,
-            save_ema_weights_in_callback_state=True,
+    # if config.model.ema_rate > 0.0:
+    #     ema_callback = EMA(
+    #         decay=0.999,
+    #         evaluate_ema_weights_instead=True,
+    #         save_ema_weights_in_callback_state=True,
+    #     )
+    #     callback_list.append(ema_callback)
+
+    if "tab" in config.model.name:
+        logging.info(ModelSummary(model, max_depth=2))
+    else:
+        summary(
+            model,
+            depth=3,
+            input_data=[
+                torch.empty(
+                    1,
+                    config.data.num_categories,
+                    config.data.image_size,
+                    config.data.image_size,
+                ),
+                torch.zeros(
+                    1,
+                ),
+            ],
         )
-        callback_list.append(ema_callback)
 
-
-    # summary(
-    #     model,
-    #     input_data=[
-    #         torch.empty(
-    #             1,
-    #             config.data.num_categories,
-    #             config.data.image_size,
-    #             config.data.image_size,
-    #         ),
-    #         torch.zeros(
-    #             1,
-    #         ),
-    #     ],
-    # )
-
-    print(ModelSummary(model, max_depth=2))
 
     wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
     wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
