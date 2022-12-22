@@ -37,6 +37,8 @@ class BaseScoreModel(pl.LightningModule):
         default_init_fn = build_default_init_fn()
         self.net.apply(default_init_fn)
 
+        self.save_hyperparameters(config.to_dict())
+
     def on_load_checkpoint(self, checkpoint) -> None:
         """This is a hack to load the EMA weights into the model.
         The EMA weights are stored in the checkpoint as a callback.
@@ -99,6 +101,10 @@ class BaseScoreModel(pl.LightningModule):
         # optimizer.param_groups[0]['capturable'] = True
 
         return optimizer
+    
+    # Using custom or multiple metrics (default_hp_metric=False)
+    def on_train_start(self):
+        self.logger.log_hyperparams(self.hparams, {"val_err": 0})
 
     def forward(self, x, t):
 
