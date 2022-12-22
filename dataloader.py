@@ -2,25 +2,28 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split, TensorDataset, Subset
+from torch.utils.data import Dataset, DataLoader, random_split, TensorDataset, Subset
 from torchvision.datasets import MNIST, Omniglot, FashionMNIST
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
+from sklearn.pipeline import make_pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
+from scipy.io import arff
+from models.mutils import onehot_to_logit
+from configs.dataconfigs import get_config
 
 tabular_datasets = {"adult": "adult.csv"}
 
 
-def get_dataset(config, mode="train"):
+def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
 
-    generator=torch.Generator().manual_seed(42)
+    generator = torch.Generator().manual_seed(seed)
     dataset_name = config.data.dataset.lower()
-
 
     if dataset_name in tabular_datasets:
         data = build_tabular_ds(dataset_name)
-    
+
     # If a torchvision dataset
     elif dataset_name in ["mnist", "omniglot", "fashion"]:
         rootdir = "/tmp/datasets"
@@ -54,6 +57,7 @@ def get_dataset(config, mode="train"):
                 (
                     ToTensor(),
                     Lambda(to_1hot),
+                    Lambda(onehot_to_logit),
                 )
             )
         elif dataset_name == "omniglot":
@@ -64,6 +68,7 @@ def get_dataset(config, mode="train"):
                     lambda x: 1 - x,
                     Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR),
                     Lambda(to_1hot),
+                    Lambda(onehot_to_logit),
                 )
             )
         else:
@@ -73,45 +78,81 @@ def get_dataset(config, mode="train"):
                     ToTensor(),
                     Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR),
                     Lambda(to_1hot),
+                    Lambda(onehot_to_logit),
                 )
             )
-        data = dataset(rootdir, download=True, transform=data_transform)
+        data = dataset(
+            rootdir, train=train_mode, download=True, transform=data_transform
+        )
     else:
         raise NotImplementedError
 
-    num_samples = len(data)
-    train_data, val_data = random_split(
-        data, [0.9, 0.1], generator=generator
-    )
+    train_ds, val_ds, test_ds = random_split(data, [0.8, 0.1, 0.1], generator=generator)
 
-    if mode == "train" and dataset_name in tabular_datasets:
-        inlier_idxs = [idx for idx, (x,y) in enumerate(train_data) if y.argmax() == 0]
-        train_data = Subset(train_data, inlier_idxs)
+    if train_mode and dataset_name in tabular_datasets:
+        inlier_idxs = [idx for idx, (x, y) in enumerate(train_ds) if y == 0]
+        train_ds = Subset(train_ds, inlier_idxs)
 
-    train_ds = DataLoader(
-        train_data,
-        batch_size=config.training.batch_size,
-        num_workers=8,
-        pin_memory=True,
-    )
+    if return_with_loader:
+        train_ds = DataLoader(
+            train_ds,
+            batch_size=config.training.batch_size,
+            num_workers=12,
+            pin_memory=True,
+        )
 
-    val_ds = DataLoader(
-        val_data,
-        batch_size=config.eval.batch_size,
-        num_workers=8,
-        pin_memory=True,
-    )
+        val_ds = DataLoader(
+            val_ds,
+            batch_size=config.eval.batch_size,
+            num_workers=8,
+            pin_memory=True,
+        )
 
-    return train_ds, val_ds
+        test_ds = DataLoader(
+            test_ds,
+            batch_size=config.eval.batch_size,
+            num_workers=8,
+            pin_memory=True,
+        )
+
+    return train_ds, val_ds, test_ds
+
 
 # !TODO: Have this load raw data and labels separately
 def load_dataset(name):
+    str_type = lambda x: str(x, "utf-8")
+
     if name in ["adult"]:
         return pd.read_csv(f"data/{name}.csv").dropna()
+
+    # AD_nominal
+    # dtype = all categorical
+    # Anomaly: AD
+
+    # AID
+    # dtype = all categorical
+    # Anomaly: active
+    basedir = "data/categorical_data_outlier_detection/"
+    if name == "bank":
+        dataconfig = get_config("bank")
+        label = dataconfig.label_column
+
+        data, meta = arff.loadarff(basedir + "/bank-additional-ful-nominal.arff")
+        df = pd.DataFrame(data).applymap(str_type)
+        X = df.drop(
+            columns=label,
+        )
+        y = np.zeros(len(df[label]), dtype=np.float32)
+        ano_idxs = df[label] == dataconfig.anomaly_label
+        y[ano_idxs] = 1.0
+
+        return X, y, dataconfig
+
 
 def build_tabular_ds(name):
     raw_data = load_dataset(name)
 
+    to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
     categorical_columns_selector = selector(dtype_include=object)
     continuous_columns_selector = selector(dtype_include=[int, float])
     categorical_features = categorical_columns_selector(raw_data)
@@ -121,16 +162,64 @@ def build_tabular_ds(name):
     preprocessor = ColumnTransformer(
         transformers=[
             ("num", StandardScaler(), continuous_features),
-            ("cat", encoder, categorical_features),
-            #!FIXME: put oneot to logit here
+            (
+                "cat",
+                make_pipeline(encoder, FunctionTransformer(to_logit)),
+                categorical_features,
+            ),
         ]
     )
-    
+
     data = preprocessor.fit_transform(raw_data)
     # Assumes last column is always label
-    category_counts = [len(c) for c in preprocessor.named_transformers_["cat"].categories_ ]
+    category_counts = [
+        len(c)
+        for c in preprocessor.named_transformers_["cat"]
+        .named_steps["onehotencoder"]
+        .categories_
+    ]
     label_cols = category_counts[-1]
     X = torch.from_numpy(data[:, :-label_cols]).float()
-    y = torch.from_numpy(data[:, -label_cols:]).float()
+    y = torch.from_numpy(data[:, -label_cols:].argmax(1)).float()
 
-    return TensorDataset(X,y)
+    return TensorDataset(X, y)
+
+
+def build_tabular_ds_arff(name):
+    X, y, dataconfig = load_dataset(name)
+    to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
+
+    categorical_columns_selector = selector(dtype_include=object)
+    continuous_columns_selector = selector(dtype_include=[int, float])
+    categorical_features = categorical_columns_selector(X)
+    continuous_features = continuous_columns_selector(X)
+
+    encoder = OneHotEncoder(sparse=False)
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), continuous_features),
+            (
+                "cat",
+                make_pipeline(encoder, FunctionTransformer(to_logit)),
+                categorical_features,
+            ),
+        ]
+    )
+
+    # Only fit on inliers
+    preprocessor.fit(X[y == 0])
+
+    categories = [
+        len(x)
+        for x in preprocessor.named_transformers_["cat"]
+        .named_steps["onehotencoder"]
+        .categories_
+    ]
+    assert categories == dataconfig.categories
+
+    X = preprocessor.transform(X)
+
+    X = torch.from_numpy(X).float()
+    y = torch.from_numpy(y).float()
+
+    return TensorDataset(X, y)
