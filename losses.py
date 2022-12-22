@@ -32,8 +32,9 @@ def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     loss /= K
 
     with torch.no_grad():
-        rel_err = (scores.mean(dim=0) - targets.mean(dim=0)).abs()
-        rel_err = (rel_err / targets.abs().mean(dim=0)).mean()
+        scores, targets = scores.double(), targets.double()
+        rel_err = (scores - targets).abs()
+        rel_err = (rel_err / targets.abs()).mean()
     
     return torch.mean(loss), rel_err
 
@@ -51,8 +52,10 @@ def KL_loss(x_logit, x_noisy, model_out, tau):
     with torch.no_grad():
         scores = -tau + tau * K * torch.softmax(model_out, dim=1)
         targets = log_concrete_grad(x_noisy, x_logit, tau=tau)
-        rel_err = (scores.mean(dim=0) - targets.mean(dim=0)).abs()
-        rel_err = (rel_err / targets.abs().mean(dim=0)).mean()
+        scores, targets = scores.double(), targets.double()
+        rel_err = (scores - targets).abs()
+        rel_err = (rel_err / targets.abs()).mean()
+    
     
     return loss, rel_err
 
@@ -61,7 +64,14 @@ def continuous_dsm_loss(noise, scores, sigmas):
     D = scores.shape[1]
     target = - noise / (sigmas ** 2)
     loss = (scores - target) ** 2
-    loss = torch.mean(loss.reshape(batch_sz, -1), dim=-1)
+    loss = 0.5 * torch.sum(loss.reshape(batch_sz, -1), dim=-1)
+    # loss = torch.mean(loss.reshape(batch_sz, -1), dim=-1)
     # loss *= sigmas[:,0] ** 2
 
-    return torch.mean(loss)
+    with torch.no_grad():
+        scores, target = scores.double(), target.double()
+        rel_err = (scores - target).abs()
+        rel_err = (rel_err / target.abs()).mean()
+    
+
+    return torch.mean(loss), rel_err

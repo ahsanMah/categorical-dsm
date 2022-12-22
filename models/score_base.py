@@ -1,5 +1,5 @@
-import pdb
 import functools
+import pdb
 import ml_collections
 import pytorch_lightning as pl
 import torch
@@ -55,7 +55,6 @@ class BaseScoreModel(pl.LightningModule):
             print("Restored checkpoint from EMA...")
             del ema_callback
 
-    # TODO: Add EMA here
     def configure_callbacks(self):
 
         if self.ema_rate > 0.0:
@@ -181,12 +180,13 @@ class BaseScoreModel(pl.LightningModule):
     def scorer(self, x_batch, denoise_step=False):
         self.eval()
         N = self.num_scales
-        score_norms = torch.empty(N, x_batch.shape[0], device=x_batch.device)
+        score_norms = torch.empty(x_batch.shape[0], N, device=x_batch.device)
 
         # Single denoising step
         if denoise_step:
             vec_t = torch.ones(x_batch.shape[0], device=x_batch.device) * (N - 1)
-            score = self.score_fn(x_batch, vec_t) * 1e-2
+            score = self.score_fn(x_batch, vec_t)
+            score *=  torch.linalg.norm(score.reshape(score.shape[0], -1), dim=1)[:, None, None, None]
             x_batch += score
             x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
 
@@ -195,8 +195,9 @@ class BaseScoreModel(pl.LightningModule):
                 torch.ones((x_batch.shape[0],), device=x_batch.device, dtype=torch.long)
                 * idx
             )
+            # x_batch = smoother(x_batch, self.taus[vec_t.long()][:, None, None, None])
             score = self.score_fn(x_batch, vec_t)
-            score_norms[idx, :] = torch.linalg.norm(
+            score_norms[:, idx] = torch.linalg.norm(
                 score.reshape(score.shape[0], -1), dim=1
             )
 
@@ -218,11 +219,11 @@ class VisionScoreModel(BaseScoreModel):
 
     def single_loss_step(self, x_batch, timestep_idxs):
 
-        x = onehot_to_logit(x_batch)
+        # x = onehot_to_logit(x_batch)
         tau = self.taus[timestep_idxs][:, None, None, None]
-        x_noisy = log_concrete_sample(x, tau=tau)
+        x_noisy = log_concrete_sample(x_batch, tau=tau)
         scores = self.forward(x_noisy, timestep_idxs.float())
-        cat_loss, rel_err = categorical_dsm_loss(x, x_noisy, scores, tau)
+        cat_loss, rel_err = categorical_dsm_loss(x_batch, x_noisy, scores, tau)
         cont_loss = 0.0
 
         return cat_loss, cont_loss, rel_err
@@ -270,7 +271,7 @@ class TabScoreModel(BaseScoreModel):
 
         x_cont = x_batch[:, : self.continuous_dims]
         x_cat = x_batch[:, self.continuous_dims :]
-        x_cat = onehot_to_logit(x_cat)
+        # x_cat = onehot_to_logit(x_cat)
 
         # Add noise appropriately
         x_noisy = torch.cat(
@@ -317,14 +318,16 @@ class TabScoreModel(BaseScoreModel):
         # Continuous loss
         if x_cont.shape[1] > 0:
             cont_scores = scores[:, : self.continuous_dims]
-            cont_loss += continuous_dsm_loss(cont_noise, cont_scores, sigma)
+            l, err = continuous_dsm_loss(cont_noise, cont_scores, sigma)
+            cont_loss += l
+            rel_err += err
 
         return cat_loss, cont_loss, rel_err
 
     def validation_step(self, val_batch, batch_idxs) -> torch.Tensor:
         x_batch, label = val_batch
-        # print(label, label.argmax(dim=1) == 0)
-        x_batch = x_batch[label.argmax(dim=1) == 0]
+        # print(label)
+        x_batch = x_batch[label == 0]
         # idxs = torch.randint(
         #     self.num_scales,
         #     size=(x.shape[0],),
@@ -335,7 +338,8 @@ class TabScoreModel(BaseScoreModel):
         # val_loss = self.single_loss_step((x_batch, None), idxs)
         # self.log("val_loss", val_loss.item(), prog_bar=True)
 
-        val_loss = 0.0
+        val_loss_cont = 0.0
+        val_loss_cat = 0.0
         val_err = 0.0
 
         t = torch.ones(
@@ -349,18 +353,25 @@ class TabScoreModel(BaseScoreModel):
         for idx in range(0, self.num_scales):
             cat_loss, cont_loss, rel_err = self.single_loss_step(x_batch, t * idx)
             loss = cat_loss + cont_loss
-            val_loss += loss
+            val_loss_cont += cont_loss
+            val_loss_cat += cat_loss
             val_err += rel_err
 
             if idx % 3 == 0:
                 self.log(f"val_loss/{idx}", loss.item())
                 self.log(f"val_err/{idx}", rel_err.item())
 
-        val_loss /= self.num_scales
+        val_loss_cont /= self.num_scales
+        val_loss_cat /= self.num_scales
         val_err /= self.num_scales
+        val_loss = val_loss_cont + val_loss_cat
 
         self.log("val_loss", val_loss.item(), prog_bar=True)
         self.log("val_err", val_err.item())
+        self.log("val_loss_cat", val_loss_cat.item())
+
+        if val_loss_cont > 0:
+            self.log("val_loss_cont", val_loss_cont.item())
 
         return val_loss
 
@@ -368,19 +379,35 @@ class TabScoreModel(BaseScoreModel):
     def scorer(self, x_batch, denoise_step=False):
         self.eval()
         N = self.num_scales
-        score_norms = torch.empty(x_batch.shape[0], N,  device=x_batch.device)
+        score_norms = torch.empty(x_batch.shape[0], N, device=x_batch.device)
+
+        x_cont = x_batch[:, : self.continuous_dims]
+        x_categories = x_batch[:, self.continuous_dims :]
+        x_batch = torch.cat((x_cont, x_categories), dim=1).cuda()
 
         # Single denoising step
         if denoise_step:
             vec_t = torch.ones(x_batch.shape[0], device=x_batch.device) * (N - 1)
-            score = self.score_fn(x_batch, vec_t) 
-            score *= torch.linalg.norm(score, dim=1, 
+            score = self.score_fn(x_batch, vec_t)
+            cont_scores = score[:, : self.continuous_dims]
+            cont_scores *= torch.linalg.norm(cont_scores, dim=1, keepdim=True)
+            cat_scores = score[:, self.continuous_dims :]
+            cat_scores = torch.cat(
+                [
+                    x_cat_score * torch.linalg.norm(x_cat_score, dim=1, keepdim=True)
+                    for x_cat_score in self.splitter(cat_scores)
+                ],
+                dim=1,
             )
+            score = torch.cat((cont_scores, cat_scores), dim=1)
             x_batch += score
+            # for x_cat in self.splitter(x_batch[:, self.continuous_dims :]):
+            #     x_batch[:, self.continuous_dims :] += x_cat_score
+
             # x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
-        
+
         x_cont = x_batch[:, : self.continuous_dims]
-        x_categories = onehot_to_logit(x_batch[:, self.continuous_dims :])
+        x_categories = x_batch[:, self.continuous_dims :]
 
         for idx in range(N):
             vec_t = (
@@ -390,7 +417,10 @@ class TabScoreModel(BaseScoreModel):
             tau = self.taus[vec_t.long()][:, None]
             # print(vec_t[0], tau[0], x_categories[0])
             x_cat = torch.cat(
-                [smoother(x_cat_hot, tau=tau) for x_cat_hot in self.splitter(x_categories)],
+                [
+                    smoother(x_cat_hot, tau=tau)
+                    for x_cat_hot in self.splitter(x_categories)
+                ],
                 dim=1,
             )
             # print(x_cat[0])
@@ -407,7 +437,7 @@ class TabScoreModel(BaseScoreModel):
 def smoother(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
 
     eps = 1e-20
-    U = torch.rand_like(class_logits) * 1e-5
+    U = torch.rand_like(class_logits) * 1e-10
     epsilon_noise = -torch.log(-torch.log(U + eps) + eps)
 
     x = (epsilon_noise + class_logits) / tau
