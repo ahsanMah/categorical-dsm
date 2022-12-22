@@ -23,7 +23,7 @@ def train(config, workdir):
     else:
         model = VisionScoreModel(config)
 
-    train_loader, val_loader = get_dataset(config)
+    train_loader, val_loader, test_loader = get_dataset(config)
 
     # Checkpoint that saves periodically to allow for resuming later
     checkpoint_callback = ModelCheckpoint(
