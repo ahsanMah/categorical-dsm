@@ -5,7 +5,7 @@ import torch
 
 from pytorch_lightning.utilities.model_summary import ModelSummary
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 from torchinfo import summary
 
 import wandb
@@ -13,6 +13,7 @@ from dataloader import get_dataset
 from models.score_base import VisionScoreModel, TabScoreModel
 from models.ema import EMA
 import logging
+
 
 def train(config, workdir):
 
@@ -42,14 +43,6 @@ def train(config, workdir):
     )
 
     callback_list = [checkpoint_callback, snapshot_callback]
-    
-    # if config.model.ema_rate > 0.0:
-    #     ema_callback = EMA(
-    #         decay=0.999,
-    #         evaluate_ema_weights_instead=True,
-    #         save_ema_weights_in_callback_state=True,
-    #     )
-    #     callback_list.append(ema_callback)
 
     if "tab" in config.model.name:
         logging.info(ModelSummary(model, max_depth=2))
@@ -70,9 +63,11 @@ def train(config, workdir):
             ],
         )
 
-
-    wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
-    wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
+    # wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
+    # wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
+    logger = TensorBoardLogger(
+        save_dir=f"{workdir}/tensorboard_logs/", name="", default_hp_metric=False
+    )
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
@@ -85,7 +80,7 @@ def train(config, workdir):
         callbacks=callback_list,
         fast_dev_run=5 if config.devtest else 0,
         enable_model_summary=False,
-        logger=wandb_logger,
+        logger=logger,
         # num_sanity_val_steps=0,
     )
     # ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"

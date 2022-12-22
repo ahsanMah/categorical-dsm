@@ -1,3 +1,6 @@
+import os
+os.environ['WANDB_MODE'] = 'disabled'
+
 from absl import app
 from absl import flags
 import ml_collections
@@ -30,6 +33,7 @@ flags.mark_flags_as_required(["workdir", "config", "mode"])
 def main(argv):
     config = FLAGS.config
     workdir = FLAGS.workdir
+    project = "energy"
 
     if FLAGS.mode == "sweep":
 
@@ -60,13 +64,13 @@ def main(argv):
         if FLAGS.sweep_id is not None:
             sweep_id = FLAGS.sweep_id
         else:
-            sweep_id = wandb.sweep(sweep_config, project="categorical")
+            sweep_id = wandb.sweep(sweep_config, project=project)
 
         # Start sweep job
-        wandb.agent(sweep_id, train_sweep, project="categorical", count=10)
+        wandb.agent(sweep_id, train_sweep, project=project, count=10)
 
     else:
-        wandb.init(project="categorical", config=config.to_dict(), resume="allow")
+        wandb.init(project=project, config=config.to_dict(), resume="allow")
         runner.train(config, workdir)
 
 
