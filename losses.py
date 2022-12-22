@@ -34,7 +34,7 @@ def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     with torch.no_grad():
         scores, targets = scores.double(), targets.double()
         rel_err = (scores - targets).abs()
-        rel_err = (rel_err / targets.abs()).mean()
+        rel_err = (rel_err / torch.maximum(scores.abs(), targets.abs())).mean()
     
     return torch.mean(loss), rel_err
 
@@ -71,7 +71,7 @@ def continuous_dsm_loss(noise, scores, sigmas):
     with torch.no_grad():
         scores, target = scores.double(), target.double()
         rel_err = (scores - target).abs()
-        rel_err = (rel_err / target.abs()).mean()
+        rel_err = (rel_err / torch.maximum(scores.abs(), target.abs())).mean()
     
 
     return torch.mean(loss), rel_err
