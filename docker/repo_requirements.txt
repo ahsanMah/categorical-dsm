@@ -1,0 +1,8 @@
+tensorboard
+torchvision
+torchinfo
+antspynet
+wandb
+seaborn
+ml-collections
+absl-py
