@@ -1,19 +1,30 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, random_split, TensorDataset, Subset
-from torchvision.datasets import MNIST, Omniglot, FashionMNIST
-from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
-from sklearn.pipeline import make_pipeline
+from scipy.io import arff
 from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
-from scipy.io import arff
-from models.mutils import onehot_to_logit
-from configs.dataconfigs import get_config
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
+from torch.utils.data import DataLoader, Dataset, Subset, TensorDataset, random_split
+from torchvision.datasets import MNIST, FashionMNIST, Omniglot
+from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
 
-tabular_datasets = {"adult": "adult.csv"}
+from configs.dataconfigs import get_config
+from models.mutils import onehot_to_logit
+
+tabular_datasets = {
+    "adult": "adult.csv",
+    "bank": "bank.arff",
+    "chess": "chess_krkopt_zerovsall.arff",
+}
+arff_datasets = {
+    "bank": "bank-additional-ful-nominal.arff",
+    "chess": "chess_krkopt_zerovsall.arff",
+}
 
 
 def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
@@ -22,7 +33,10 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
     dataset_name = config.data.dataset.lower()
 
     if dataset_name in tabular_datasets:
-        data = build_tabular_ds(dataset_name)
+        if dataset_name in arff_datasets:
+            data = build_tabular_ds_arff(dataset_name)
+        else:
+            data = build_tabular_ds(dataset_name)
 
     # If a torchvision dataset
     elif dataset_name in ["mnist", "omniglot", "fashion"]:
@@ -87,7 +101,14 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
     else:
         raise NotImplementedError
 
+    # Subset inlier only
+    # Split 80,20 train, test
+    # split test 50,50 into val,test
+
     train_ds, val_ds, test_ds = random_split(data, [0.8, 0.1, 0.1], generator=generator)
+
+    logging.info(f"Splitting dataset with seed: {seed}")
+    logging.info(f"Train, Val, Test: {len(train_ds)}, {len(val_ds)}, {len(test_ds)}")
 
     if train_mode and dataset_name in tabular_datasets:
         inlier_idxs = [idx for idx, (x, y) in enumerate(train_ds) if y == 0]
@@ -133,20 +154,20 @@ def load_dataset(name):
     # dtype = all categorical
     # Anomaly: active
     basedir = "data/categorical_data_outlier_detection/"
-    if name == "bank":
-        dataconfig = get_config("bank")
-        label = dataconfig.label_column
+    # if name == "bank":
+    dataconfig = get_config(name)
+    label = dataconfig.label_column
 
-        data, meta = arff.loadarff(basedir + "/bank-additional-ful-nominal.arff")
-        df = pd.DataFrame(data).applymap(str_type)
-        X = df.drop(
-            columns=label,
-        )
-        y = np.zeros(len(df[label]), dtype=np.float32)
-        ano_idxs = df[label] == dataconfig.anomaly_label
-        y[ano_idxs] = 1.0
-
-        return X, y, dataconfig
+    data, meta = arff.loadarff(basedir + arff_datasets[name])
+    df = pd.DataFrame(data).applymap(str_type)
+    X = df.drop(
+        columns=label,
+    )
+    y = np.zeros(len(df[label]), dtype=np.float32)
+    ano_idxs = df[label] == dataconfig.anomaly_label
+    y[ano_idxs] = 1.0
+    # print(y)
+    return X, y.squeeze(), dataconfig
 
 
 def build_tabular_ds(name):
@@ -181,7 +202,7 @@ def build_tabular_ds(name):
     label_cols = category_counts[-1]
     X = torch.from_numpy(data[:, :-label_cols]).float()
     y = torch.from_numpy(data[:, -label_cols:].argmax(1)).float()
-
+    logging.info(f"Loaded dataset: {name}, Samples: {X.shape[0]}")
     return TensorDataset(X, y)
 
 
@@ -221,5 +242,6 @@ def build_tabular_ds_arff(name):
 
     X = torch.from_numpy(X).float()
     y = torch.from_numpy(y).float()
+    logging.info(f"Loaded dataset: {name}, Samples: {X.shape[0]}")
 
     return TensorDataset(X, y)

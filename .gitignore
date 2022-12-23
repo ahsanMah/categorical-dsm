@@ -1,4 +1,5 @@
 # Repo specific ignores
+data/
 wandb/
 workdir/
 **.ipynb_checkpoints
