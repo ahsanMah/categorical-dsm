@@ -234,7 +234,7 @@ class TabScoreModel(BaseScoreModel):
         super().__init__(config)
 
         self.categories = config.data.categories
-        self.continuous_dims = config.data.cont_dims
+        self.continuous_dims = config.data.numerical_features
         self.categorical_dims = sum(self.categories)
 
         self.register_buffer("sigmas", torch.tensor(get_sigmas(config)))
@@ -261,7 +261,7 @@ class TabScoreModel(BaseScoreModel):
         cat_score = tau * cat_score - tau
 
         score = torch.cat((cont_score, cat_score), dim=1)
-
+        # print(cont_score.shape, cat_score.shape, score.shape)
         return score
 
     def single_loss_step(self, x_batch, timestep_idxs):

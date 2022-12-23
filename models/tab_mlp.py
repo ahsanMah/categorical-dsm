@@ -21,7 +21,7 @@ class TabMLP(nn.Module):
         self.embedding_size = embedding_size = config.model.time_embedding_size
         self.layers = config.model.layers
         self.dropout = dropout = config.model.dropout
-        self.continuous_dim = config.data.cont_dims
+        self.continuous_dim = config.data.numerical_features
         self.categorical_dims = config.data.categories
         self.num_classes = len(config.data.categories)
         self.input_dims = self.continuous_dim + sum(self.categorical_dims)
