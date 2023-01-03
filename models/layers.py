@@ -153,7 +153,8 @@ class TabResBlockpp(nn.Module):
 
         super().__init__()
 
-        self.norm = nn.GroupNorm(num_groups=8, num_channels=d_in)
+        # self.norm = nn.GroupNorm(num_groups=8, num_channels=d_in)
+        self.norm = nn.LayerNorm(d_in)
         self.dense_1 = nn.Linear(d_in, d_out)
         self.act = get_act(act)
         self.film = FiLMBlock(time_emb_sz, d_out)
@@ -162,7 +163,7 @@ class TabResBlockpp(nn.Module):
         self.dense_2 = nn.Linear(d_out, d_out)
 
     def forward(self, x, t):
-
+        
         h = self.act(self.norm(x))
         h = self.dense_1(h)
         # h += self.dense_cond(t)
