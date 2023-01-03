@@ -1,4 +1,5 @@
 import logging
+import pdb
 
 import numpy as np
 import pandas as pd
@@ -9,7 +10,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
-from torch.utils.data import DataLoader, Dataset, Subset, TensorDataset, random_split
+from torch.utils.data import DataLoader, ConcatDataset, Subset, TensorDataset, random_split
 from torchvision.datasets import MNIST, FashionMNIST, Omniglot
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
 
@@ -102,15 +103,27 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
     # Subset inlier only
     # Split 80,20 train, test
     # split test 50,50 into val,test
-
-    train_ds, val_ds, test_ds = random_split(data, [0.8, 0.1, 0.1], generator=generator)
-
+    #!FIXME: Uncomment this 
     logging.info(f"Splitting dataset with seed: {seed}")
+
+    if dataset_name in tabular_datasets:
+        inliers = data.tensors[1] == 0
+        inlier_idxs = torch.argwhere(inliers).squeeze()
+        outlier_idxs = torch.argwhere(~inliers).squeeze()
+        logging.info(f"# Outliers: {len(outlier_idxs)}")
+        inlier_ds = Subset(data, inlier_idxs)
+        outlier_ds = Subset(data, outlier_idxs)
+        # pdb.set_trace()
+        train_ds, val_ds, test_ds = random_split(inlier_ds, [0.8, 0.1, 0.1], generator=generator)
+        test_ds = ConcatDataset([test_ds, outlier_ds])
+    else:
+        train_ds, val_ds, test_ds = random_split(data, [0.8, 0.1, 0.1], generator=generator)
+
     logging.info(f"Train, Val, Test: {len(train_ds)}, {len(val_ds)}, {len(test_ds)}")
 
-    if train_mode and dataset_name in tabular_datasets:
-        inlier_idxs = [idx for idx, (x, y) in enumerate(train_ds) if y == 0]
-        train_ds = Subset(train_ds, inlier_idxs)
+    # if train_mode and dataset_name in tabular_datasets:
+    #     inlier_idxs = [idx for idx, (x, y) in enumerate(train_ds) if y == 0]
+    #     train_ds = Subset(train_ds, inlier_idxs)
 
     if return_with_loader:
         train_ds = DataLoader(
