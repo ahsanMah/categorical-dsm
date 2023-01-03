@@ -37,6 +37,8 @@ class BaseScoreModel(pl.LightningModule):
         default_init_fn = build_default_init_fn()
         self.net.apply(default_init_fn)
 
+        self.save_hyperparameters(config.to_dict())
+
     def on_load_checkpoint(self, checkpoint) -> None:
         """This is a hack to load the EMA weights into the model.
         The EMA weights are stored in the checkpoint as a callback.
@@ -100,6 +102,22 @@ class BaseScoreModel(pl.LightningModule):
 
         return optimizer
 
+    # Using custom or multiple metrics (default_hp_metric=False)
+    def on_train_start(self):
+        self.logger.log_hyperparams(self.hparams, {"val_err": 0})
+
+    # def on_after_backward(self) -> None:
+    #     if self.trainer.global_step % 10 == 0:
+    #         for name, params in self.named_parameters():
+    #             # print(name)
+    #             self.logger.experiment.add_histogram(
+    #                 f"{name}.act", params, self.current_epoch
+    #             )
+    #             if params.requires_grad:
+    #                 self.logger.experiment.add_histogram(
+    #                     f"{name}.grad", params.grad, self.current_epoch
+    #                 )
+
     def forward(self, x, t):
 
         if self.estimate_noise:
@@ -119,6 +137,7 @@ class BaseScoreModel(pl.LightningModule):
     def training_step(self, train_batch, batch_idxs) -> torch.Tensor:
 
         x, label = train_batch
+        # print(x.shape)
 
         idxs = torch.randint(
             self.num_scales,
@@ -186,7 +205,9 @@ class BaseScoreModel(pl.LightningModule):
         if denoise_step:
             vec_t = torch.ones(x_batch.shape[0], device=x_batch.device) * (N - 1)
             score = self.score_fn(x_batch, vec_t)
-            score *=  torch.linalg.norm(score.reshape(score.shape[0], -1), dim=1)[:, None, None, None]
+            score *= torch.linalg.norm(score.reshape(score.shape[0], -1), dim=1)[
+                :, None, None, None
+            ]
             x_batch += score
             x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
 
@@ -375,7 +396,7 @@ class TabScoreModel(BaseScoreModel):
 
         return val_loss
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def scorer(self, x_batch, denoise_step=False):
         self.eval()
         N = self.num_scales
@@ -415,7 +436,7 @@ class TabScoreModel(BaseScoreModel):
                 * idx
             )
             tau = self.taus[vec_t.long()][:, None]
-            # print(vec_t[0], tau[0], x_categories[0])
+
             x_cat = torch.cat(
                 [
                     smoother(x_cat_hot, tau=tau)
@@ -423,7 +444,6 @@ class TabScoreModel(BaseScoreModel):
                 ],
                 dim=1,
             )
-            # print(x_cat[0])
             x_batch = torch.cat((x_cont, x_cat), dim=1).cuda()
 
             score = self.score_fn(x_batch, vec_t)

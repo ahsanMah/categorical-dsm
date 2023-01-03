@@ -50,8 +50,10 @@ class TabResNet(nn.Module):
 
         # Final head to project back to input dimensions
         self.final_head = nn.Sequential(
-            nn.GroupNorm(num_groups=8, num_channels=ndims),
-            nn.ReLU(),
+            # nn.GroupNorm(num_groups=8, num_channels=ndims),
+            # nn.ReLU(),
+            nn.LayerNorm(ndims),
+            nn.LeakyReLU(),
             nn.Linear(ndims, self.input_dims),
         )
 
