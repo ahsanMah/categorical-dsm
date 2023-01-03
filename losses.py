@@ -55,7 +55,7 @@ def KL_loss(x_logit, x_noisy, model_out, tau):
         targets = log_concrete_grad(x_noisy, x_logit, tau=tau)
         scores, targets = scores.double(), targets.double()
         rel_err = (scores - targets).abs()
-        rel_err = (rel_err / targets.abs()).mean()
+        rel_err = (rel_err / torch.maximum(scores.abs(), targets.abs())).mean()
     
     
     return loss, rel_err
