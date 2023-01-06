@@ -257,6 +257,6 @@ def build_tabular_ds(name):
 
     X = torch.from_numpy(X).float()
     y = torch.from_numpy(y).float()
-    logging.info(f"Loaded dataset: {name}, Samples: {X.shape[0]}")
+    logging.info(f"Loaded dataset: {name}, Shape: {X.shape}")
 
     return TensorDataset(X, y)

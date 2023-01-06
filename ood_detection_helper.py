@@ -60,7 +60,7 @@ def auxiliary_model_analysis(
 
     print("=====" * 5 + " Training KD Tree " + "=====" * 5)
 
-    N_NEIGHBOURS = 1
+    N_NEIGHBOURS = 2
     nbrs = NearestNeighbors(n_neighbors=N_NEIGHBOURS, algorithm="kd_tree").fit(X_train)
 
     kd_train_score, indices = nbrs.kneighbors(X_train)
@@ -127,7 +127,7 @@ def plot_curves(inlier_score, outlier_score, label, axs=()):
 
 
 def ood_metrics(
-    inlier_score, outlier_score, plot=False, verbose=False, names=["Inlier", "Outlier"]
+    inlier_score, outlier_score, plot=False, verbose=False, names=["Outlier"]
 ):
     import numpy as np
     import seaborn as sns
@@ -184,6 +184,27 @@ def ood_metrics(
             xticks=ticks,
             yticks=ticks,
         )
+        # axs[0].legend(title="ROC-AUC: {:.2f}".format(metrics["roc_auc"] * 100))
+
+        # Add a text box with all the metrics
+        textstr = "\n".join(
+            (
+                r"$\mathit{{ROC\ AUC}}={:.3f}$".format(metrics["roc_auc"]),
+                r"$\mathit{{AP}}={:.3f}$".format(metrics["ap"]),
+                r"$\mathit{{FPR @ TPR95}}={:.3f}$".format(metrics["fpr_tpr95"]),
+                r"$\mathit{{Detection\ Error}}={:.3f}$".format(metrics["de"]),
+            )
+        )
+        props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+        axs[0].text(
+            0.6,
+            0.05,
+            textstr,
+            transform=axs[0].transAxes,
+            fontsize=12,
+            verticalalignment="bottom",
+            bbox=props,
+        )
 
         axs[1].plot(rec_in, prec_in, label="PR-In")
         axs[1].plot(rec_out, prec_out, label="PR-Out")
@@ -196,12 +217,12 @@ def ood_metrics(
             yticks=ticks,
         )
         axs[1].legend()
-        fig.suptitle("{} vs {}".format(*names), fontsize=20)
+        # fig.suptitle("{} vs {}".format(*names), fontsize=20)
     #         plt.show()
     #         plt.close()
 
     if verbose:
-        print("{} vs {}".format(*names))
+        # print("{} vs {}".format(*names))
         print("----------------")
         print("ROC-AUC: {:.4f}".format(metrics["roc_auc"] * 100))
         print(
