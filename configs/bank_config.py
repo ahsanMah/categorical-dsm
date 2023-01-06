@@ -16,16 +16,16 @@ def get_config():
 
     # model
     model = config.model
-    model.estimate_noise = False
-    model.ndims = 512
+    model.estimate_noise = True
+    model.ndims = 1024
     model.time_embedding_size = 128
-    model.layers = 12
+    model.layers = 16
     model.dropout = 0.0
     model.act = "gelu"
 
     # optimization
     optim = config.optim
-    optim.weight_decay = 0.0
+    optim.weight_decay = 1e-5
 
 
     return config
