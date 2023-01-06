@@ -1,18 +1,24 @@
+import logging
 import os
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
+import seaborn as sns
 import torch
-
-from pytorch_lightning.utilities.model_summary import ModelSummary
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.utilities.model_summary import ModelSummary
 from torchinfo import summary
 
 import wandb
 from dataloader import get_dataset
-from models.score_base import VisionScoreModel, TabScoreModel
-import logging
+from models.score_base import TabScoreModel, VisionScoreModel
+from ood_detection_helper import auxiliary_model_analysis, ood_metrics
+
+mpl.rc("figure", figsize=(10, 4), dpi=100)
+sns.set_theme()
 
 
 def train(config, workdir):
@@ -63,11 +69,15 @@ def train(config, workdir):
             ],
         )
 
-    wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
+    # wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
     wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
     tb_logger = TensorBoardLogger(
         save_dir=f"{workdir}/tensorboard_logs/", name="", default_hp_metric=False
     )
+
+    ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
+    if not os.path.exists(ckpt_path):
+        ckpt_path = None
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
@@ -80,67 +90,91 @@ def train(config, workdir):
         callbacks=callback_list,
         fast_dev_run=5 if config.devtest else 0,
         enable_model_summary=False,
+        check_val_every_n_epoch=None,
         logger=[tb_logger, wandb_logger],
         # num_sanity_val_steps=0,
+        resume_from_checkpoint=ckpt_path,
     )
-    # ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
-    # if not os.path.exists(ckpt_path):
-    ckpt_path = None
 
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
 
 
-def eval(config, workdir, ckpt_num=-1, denoise=False):
+def eval(config, workdir, ckpt_num=-1):
 
-    # import torch.nn.functional as F
-    # import matplotlib.pyplot as plt
-    # import seaborn as sns
-    # import numpy as np
-    # import pandas as pd
-    # from torchinfo import summary
-    # import seaborn as sns
-    # import matplotlib as mpl
-
-    # mpl.rc("figure", figsize=(10, 4), dpi=100)
-    # sns.set_theme()
-
+    denoise = config.msma.denoise
     ckpt_dir = os.path.join(workdir, "checkpoints")
     ckpts = sorted(os.listdir(ckpt_dir))
     ckpt = ckpts[ckpt_num]
-    scorenet = TabScoreModel.load_from_checkpoint(
-        checkpoint_path=os.path.join(ckpt_dir, ckpt), config=config
-    ).cuda()
-    scorenet.eval()
-
-    train_loader, val_loader, test_loader = get_dataset(config, train_mode=False)
-    outdict = {}
-    with torch.cuda.device(0):
-        for ds, loader in [("val", val_loader), ("test", test_loader)]:
-            score_norms = []
-            labels = []
-            for x_batch, y in loader:
-                s = scorenet.scorer(x_batch.cuda(), denoise_step=denoise).cpu().numpy()
-                score_norms.append(s)
-                labels.append(y.numpy())
-            score_norms = np.concatenate(score_norms)
-            labels = np.concatenate(labels)
-            outdict[ds] = {"score_norms": score_norms, "labels": labels}
-
     step = ckpt.split("-")[0]
-    os.makedirs(os.path.join(workdir, "score_norms"), exist_ok=True)
     fname = os.path.join(
         workdir, "score_norms", f"{step}-{'denoise' if denoise else ''}-score_norms.npz"
     )
 
-    with open(fname, "wb") as f:
-        np.savez_compressed(f, **outdict)
+    if os.path.exists(fname):
+        print(f"Loading from {fname}")
+        with np.load(fname, allow_pickle=True) as npzfile:
+            outdict = {k: npzfile[k].item() for k in npzfile.files}
+    else:
+        scorenet = TabScoreModel.load_from_checkpoint(
+            checkpoint_path=os.path.join(ckpt_dir, ckpt), config=config
+        ).cuda()
+        scorenet.eval()
 
-    # from ood_detection_helper import ood_metrics, auxiliary_model_analysis
+        train_loader, val_loader, test_loader = get_dataset(config, train_mode=False)
+        outdict = {}
+        with torch.cuda.device(0):
+            for ds, loader in [("val", val_loader), ("test", test_loader)]:
+                score_norms = []
+                labels = []
+                for x_batch, y in loader:
+                    s = (
+                        scorenet.scorer(x_batch.cuda(), denoise_step=denoise)
+                        .cpu()
+                        .numpy()
+                    )
+                    score_norms.append(s)
+                    labels.append(y.numpy())
+                score_norms = np.concatenate(score_norms)
+                labels = np.concatenate(labels)
+                outdict[ds] = {"score_norms": score_norms, "labels": labels}
 
-    # X_train = outdict["val"]["score_norms"]
-    # test_labels = outdict["test"]["labels"]
-    # X_test = outdict["test"]["score_norms"][test_labels == 0]
-    # X_ano = outdict["test"]["score_norms"][test_labels == 1]
-    # results = auxiliary_model_analysis(X_train, X_test, [X_ano],
-    #                                 components_range=range(5,6),
-    #                                 labels=["Train", "Inlier", "Outlier"])
+        os.makedirs(os.path.join(workdir, "score_norms"), exist_ok=True)
+        fname = os.path.join(
+            workdir,
+            "score_norms",
+            f"{step}-{'denoise' if denoise else ''}-score_norms.npz",
+        )
+
+        with open(fname, "wb") as f:
+            np.savez_compressed(f, **outdict)
+
+    X_train = outdict["val"]["score_norms"]
+    test_labels = outdict["test"]["labels"]
+    X_test = outdict["test"]["score_norms"][test_labels == 0]
+    X_ano = outdict["test"]["score_norms"][test_labels == 1]
+    results = auxiliary_model_analysis(
+        X_train,
+        X_test,
+        [X_ano],
+        components_range=range(5, 6, 1),
+        labels=["Train", "Inlier", "Outlier"],
+    )
+    ood_metrics(
+        -results["GMM"]["test_scores"],
+        -results["GMM"]["ood_scores"][0],
+        plot=True,
+        verbose=True,
+    )
+    plt.suptitle(f"{config.data.dataset} - GMM", fontsize=18)
+    plt.savefig(fname.replace("score_norms.npz", "gmm.png"), dpi=100)
+
+    ood_metrics(
+        results["KD"]["test_scores"],
+        results["KD"]["ood_scores"][0],
+        plot=True,
+        verbose=True,
+    )
+    plt.suptitle(f"{config.data.dataset} - KD Tree", fontsize=18)
+    plt.savefig(fname.replace("score_norms.npz", "kd.png"), dpi=100)
+
+    logging.info(results["GMM"]["metrics"])

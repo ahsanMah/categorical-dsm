@@ -50,6 +50,7 @@ def main(argv):
 
                 wandb.config.update(config)
                 config = ml_collections.ConfigDict(wandb.config)
+                # print(config)
                 runner.train(config, workdir)
             
             return
@@ -63,8 +64,10 @@ def main(argv):
             sweep_id = wandb.sweep(sweep_config, project="categorical")
 
         # Start sweep job
-        wandb.agent(sweep_id, train_sweep, project="categorical", count=10)
+        wandb.agent(sweep_id, train_sweep, project="categorical", count=20)
 
+    elif FLAGS.mode == "eval":
+        runner.eval(config, workdir)
     else:
         wandb.init(project="categorical", config=config.to_dict(), resume="allow")
         runner.train(config, workdir)
