@@ -76,23 +76,27 @@ class BaseScoreModel(pl.LightningModule):
             weight_decay=self.optimization_opts.weight_decay,
         )
 
-        if self.optimization_opts.scheduler is not None:
+        if self.optimization_opts.scheduler != "none":
             if self.optimization_opts.scheduler == "cycle":
                 scheduler = torch.optim.lr_scheduler.OneCycleLR(
                     optimizer,
                     max_lr=1e-3,
                     total_steps=self.training_opts.n_steps,
-                    final_div_factor=1e1,
-                    div_factor=1e1,
-                    three_phase=False,
-                    pct_start=0.1,
-                    anneal_strategy="linear",
+                    div_factor=1e2,  # starts at 1e-5
+                    final_div_factor=1e-1,  # ends at 1e-6
+                    three_phase=False,  # Triangle Rate
+                    pct_start=0.01,
+                    anneal_strategy="cos",
                 )
-            else:  # Dfaults to StepLR
+            elif self.optimization_opts.scheduler == "step":  # Dfaults to StepLR
                 scheduler = torch.optim.lr_scheduler.StepLR(
-                    step_size=int(0.4 * self.training_opts.n_steps), gamma=0.3
+                    optimizer=optimizer,
+                    step_size=int(0.4 * self.training_opts.n_steps),
+                    gamma=0.3,
                 )
-            return {"optimizer": optimizer, "scheduler": scheduler}
+            else:
+                raise NotImplementedError("Scheduler not implemented")
+            return {"optimizer": optimizer, "lr_scheduler": scheduler}
 
         ########! FIXME: This problem still exists ###############
         # I effectiveley CANNOT RESUME training is using Adam/AdamW
@@ -411,11 +415,12 @@ class TabScoreModel(BaseScoreModel):
             vec_t = torch.ones(x_batch.shape[0], device=x_batch.device) * (N - 1)
             score = self.score_fn(x_batch, vec_t)
             cont_scores = score[:, : self.continuous_dims]
-            cont_scores *= torch.linalg.norm(cont_scores, dim=1, keepdim=True)
+            cont_scores *= torch.linalg.norm(cont_scores, dim=1, keepdim=True) ** -1
             cat_scores = score[:, self.continuous_dims :]
             cat_scores = torch.cat(
                 [
-                    x_cat_score * torch.linalg.norm(x_cat_score, dim=1, keepdim=True)
+                    x_cat_score
+                    * (torch.linalg.norm(x_cat_score, dim=1, keepdim=True) ** -1)
                     for x_cat_score in self.splitter(cat_scores)
                 ],
                 dim=1,
@@ -437,14 +442,14 @@ class TabScoreModel(BaseScoreModel):
             )
             tau = self.taus[vec_t.long()][:, None]
 
-            x_cat = torch.cat(
-                [
-                    smoother(x_cat_hot, tau=tau)
-                    for x_cat_hot in self.splitter(x_categories)
-                ],
-                dim=1,
-            )
-            x_batch = torch.cat((x_cont, x_cat), dim=1).cuda()
+            # x_cat = torch.cat(
+            #     [
+            #         smoother(x_cat_hot, tau=tau)
+            #         for x_cat_hot in self.splitter(x_categories)
+            #     ],
+            #     dim=1,
+            # )
+            # x_batch = torch.cat((x_cont, x_cat), dim=1).cuda()
 
             score = self.score_fn(x_batch, vec_t)
             score_norms[:, idx] = torch.linalg.norm(
