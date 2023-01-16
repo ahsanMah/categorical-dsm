@@ -75,9 +75,9 @@ def train(config, workdir):
         save_dir=f"{workdir}/tensorboard_logs/", name="", default_hp_metric=False
     )
 
-    ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
-    if not os.path.exists(ckpt_path):
-        ckpt_path = None
+    # ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
+    # if not os.path.exists(ckpt_path):
+    ckpt_path = None
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
@@ -123,7 +123,7 @@ def eval(config, workdir, ckpt_num=-1):
         train_loader, val_loader, test_loader = get_dataset(config, train_mode=False)
         outdict = {}
         with torch.cuda.device(0):
-            for ds, loader in [("val", val_loader), ("test", test_loader)]:
+            for ds, loader in [("train", train_loader), ("val", val_loader), ("test", test_loader)]:
                 score_norms = []
                 labels = []
                 for x_batch, y in loader:
@@ -148,7 +148,11 @@ def eval(config, workdir, ckpt_num=-1):
         with open(fname, "wb") as f:
             np.savez_compressed(f, **outdict)
 
-    X_train = outdict["val"]["score_norms"]
+    X_train = outdict["train"]["score_norms"]
+    np.random.seed(42)
+    np.random.shuffle(X_train)
+    X_val = outdict["val"]["score_norms"]
+    X_train = np.concatenate((X_train[:len(X_val)],X_val ))
     test_labels = outdict["test"]["labels"]
     X_test = outdict["test"]["score_norms"][test_labels == 0]
     X_ano = outdict["test"]["score_norms"][test_labels == 1]
