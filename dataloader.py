@@ -26,6 +26,8 @@ tabular_datasets = {
     "bank": "bank-additional-ful-nominal.arff",
     "chess": "chess_krkopt_zerovsall.arff",
     "census": "census.pkl",
+    "probe": "kddcup99-corrected-probevsnormal-nominal-cleaned.arff",
+    "u2r": "kddcup99-corrected-u2rvsnormal-nominal-cleaned.arff",
 }
 
 
@@ -184,42 +186,6 @@ def load_dataset(name):
     return X, y.squeeze(), dataconfig
 
 
-# def build_tabular_ds(name):
-#     raw_data = load_dataset(name)
-
-#     to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
-#     categorical_columns_selector = selector(dtype_include=object)
-#     continuous_columns_selector = selector(dtype_include=[int, float])
-#     categorical_features = categorical_columns_selector(raw_data)
-#     continuous_features = continuous_columns_selector(raw_data)
-
-#     encoder = OneHotEncoder(sparse=False)
-#     preprocessor = ColumnTransformer(
-#         transformers=[
-#             ("num", StandardScaler(), continuous_features),
-#             (
-#                 "cat",
-#                 make_pipeline(encoder, FunctionTransformer(to_logit)),
-#                 categorical_features,
-#             ),
-#         ]
-#     )
-
-#     data = preprocessor.fit_transform(raw_data)
-#     # Assumes last column is always label
-#     category_counts = [
-#         len(c)
-#         for c in preprocessor.named_transformers_["cat"]
-#         .named_steps["onehotencoder"]
-#         .categories_
-#     ]
-#     label_cols = category_counts[-1]
-#     X = torch.from_numpy(data[:, :-label_cols]).float()
-#     y = torch.from_numpy(data[:, -label_cols:].argmax(1)).float()
-#     logging.info(f"Loaded dataset: {name}, Samples: {X.shape[0]}")
-#     return TensorDataset(X, y)
-
-
 def build_tabular_ds(name):
     X, y, dataconfig = load_dataset(name)
     to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
@@ -241,8 +207,13 @@ def build_tabular_ds(name):
         ]
     )
 
-    # Only fit on inliers
-    preprocessor.fit(X[y == 0])
+    if name in ["probe"]:
+        # Some categories only appear in outliers ...
+        # so preprocessor needs to knwo them
+        preprocessor.fit(X)
+    else:
+        # Only fit on inliers
+        preprocessor.fit(X[y == 0])
 
     categories = [
         len(x)
