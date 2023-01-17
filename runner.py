@@ -51,7 +51,7 @@ def train(config, workdir):
     callback_list = [checkpoint_callback, snapshot_callback]
 
     if "tab" in config.model.name:
-        logging.info(ModelSummary(model, max_depth=2))
+        logging.info(ModelSummary(model, max_depth=3))
     else:
         summary(
             model,
@@ -109,6 +109,8 @@ def eval(config, workdir, ckpt_num=-1):
     fname = os.path.join(
         workdir, "score_norms", f"{step}-{'denoise' if denoise else ''}-score_norms.npz"
     )
+    
+    print("Evaluating {ckpt} with denoise = {denoise} and saving to {fname} if not already present.")
 
     if os.path.exists(fname):
         print(f"Loading from {fname}")
