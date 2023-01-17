@@ -8,7 +8,6 @@ def log_concrete_grad(x_logit, class_logits, tau):
 
     return grad
 
-
 def gumbel_grad(x_sample, class_logits, tau, K):
     pis = class_logits.softmax(dim=1).contiguous()
     logit_sum = torch.sum(pis / torch.pow(x_sample, tau), dim=1, keepdim=True)
@@ -29,7 +28,7 @@ def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     targets = log_concrete_grad(x_noisy, x_logit, tau=tau)
     loss = (scores - targets) ** 2
     loss = 0.5 * torch.sum(loss.reshape(batch_sz, -1), dim=-1)
-    loss /= K
+    # loss /= K
 
     with torch.no_grad():
         scores, targets = scores.double(), targets.double()
