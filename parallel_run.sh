@@ -8,7 +8,7 @@ mode=train
 while getopts m:d:c:t: flag
 do
     case "${flag}" in
-        s) mode=${OPTARG};;
+        m) mode=${OPTARG};;
         d) dataset=${OPTARG};;
         c) cuda_device=${OPTARG};;
         t) devtest=${OPTARG};;
@@ -18,7 +18,7 @@ done
 CONFIG="configs/${dataset}_config.py"
 WORKDIR="results/$dataset/seed"
 
-echo "Training dataset:$dataset on gpu:$cuda_device devtest_enabled:$devtest"
+echo "mode:$mode dataset:$dataset on gpu:$cuda_device devtest_enabled:$devtest"
 
 # Start first two runs in the background
 WANDB_MODE=disabled CUDA_VISIBLE_DEVICES=$cuda_device python main.py --mode $mode --config $CONFIG \

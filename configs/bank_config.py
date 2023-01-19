@@ -9,7 +9,7 @@ def get_config():
     # training
     training = config.training
     training.batch_size = 128
-    training.n_steps = 500000
+    training.n_steps = 1000001
 
     # data
     config.data = get_data_config("bank")

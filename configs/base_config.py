@@ -27,7 +27,7 @@ def get_config():
     model.tau_max = 20
     model.sigma_min = 1e-1
     model.sigma_max = 1.0
-    model.num_scales = 10
+    model.num_scales = 20
     model.estimate_noise = False
     model.ndims = 512
     model.time_embedding_size = 128
@@ -46,7 +46,7 @@ def get_config():
     optim.scheduler = "none"
 
     config.msma = msma = ml_collections.ConfigDict()
-    msma.denoise = False
+    msma.denoise = True
 
     config.devtest = False
     config.seed = 42

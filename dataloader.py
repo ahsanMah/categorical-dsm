@@ -33,9 +33,9 @@ tabular_datasets = {
 }
 
 
-def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
+def get_dataset(config, train_mode=True, return_with_loader=True):
 
-    generator = torch.Generator().manual_seed(seed)
+    generator = torch.Generator().manual_seed(config.seed)
     dataset_name = config.data.dataset.lower()
 
     if dataset_name in tabular_datasets:
@@ -111,11 +111,11 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
         raise NotImplementedError
 
     # Subset inlier only
-    # Split 80,20 train, test
-    # split test 50,50 into val,test
-    #!FIXME: Uncomment this
-    logging.info(f"Splitting dataset with seed: {seed}")
+    logging.info(f"Splitting dataset with seed: {config.seed}")
 
+    # Subset inlier only
+    # Split 80,10,10 train, val, test
+    # Combine test and outlier
     if dataset_name in tabular_datasets:
         inliers = data.tensors[1] == 0
         inlier_idxs = torch.argwhere(inliers).squeeze()
@@ -181,6 +181,7 @@ def load_dataset(name):
     basedir = "data/categorical_data_outlier_detection/"
     dataconfig = get_config(name)
     label = dataconfig.label_column
+
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
