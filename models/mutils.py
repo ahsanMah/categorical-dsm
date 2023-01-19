@@ -5,13 +5,14 @@ import numpy as np
 from models.tab_resnet import TabResNet
 from models.tab_mlp import TabMLP
 from models.resnext import ResNextpp
+from models.ncsnpp import NCSNpp
 
 optimizers = {
     "Adam": torch.optim.Adam,
     "AdamW": torch.optim.AdamW,
     "RAdam": torch.optim.RAdam,
 }
-models = {"tab-resnet": TabResNet, "tab-mlp": TabMLP, "resnext": ResNextpp}
+models = {"tab-resnet": TabResNet, "tab-mlp": TabMLP, "resnext": ResNextpp, "ncsn++": NCSNpp}
 
 
 """
@@ -60,12 +61,14 @@ def build_default_init_fn(scale=1.0):
     init_fn = variance_scaling(scale, "fan_avg", "uniform")
 
     def init_weights(module):
-        if isinstance(module, nn.Linear):
+        if isinstance(module, nn.Linear) or isinstance(module, nn.Conv2d):
             with torch.no_grad():
                 module.weight.data = init_fn(module.weight.shape)
 
             if module.bias is not None:
                 module.bias.data.zero_()
+            
+            # print(f"Initialized {module.__class__.__name__} with {init_fn.__name__}.")
 
     return init_weights
 
@@ -86,7 +89,7 @@ def get_optimizer(name):
 
 
 def onehot_to_logit(x_hot, eps=1e-5):
-    return torch.clamp(torch.log(x_hot), min=np.log(eps))
+    return torch.log(torch.clamp(x_hot, min=eps, max=1.0))
 
 
 def log_concrete_sample(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
@@ -101,15 +104,15 @@ def log_concrete_sample(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.
     Returns:
         torch.Tensor: Continuous samples
     """
+    eps = 1e-20
+
     # # For debugging
     # g=torch.Generator(device=class_logits.device)
-    # g.manual_seed(42)
+    # g.manual_seed(43)
     # U = torch.rand(class_logits.shape, generator=g, device=class_logits.device)
 
-    eps = 1e-20
     U = torch.rand_like(class_logits)
     gumbel_samples = -torch.log(-torch.log(U + eps) + eps)
-
     x = (gumbel_samples + class_logits) / tau
     x = x - torch.logsumexp(x, dim=1, keepdim=True)
     return x
