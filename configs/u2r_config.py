@@ -12,7 +12,7 @@ def get_config():
     training.n_steps = 1000001
 
     # data
-    config.data = get_data_config("chess")
+    config.data = get_data_config("u2r")
 
     # model
     model = config.model
