@@ -57,9 +57,9 @@ def train(config, workdir):
             model,
             depth=3,
             input_data=[
-                torch.empty(
+                torch.zeros(
                     1,
-                    config.data.num_categories,
+                    config.data.categorical_channels + config.data.continuous_channels,
                     config.data.image_size,
                     config.data.image_size,
                 ),
@@ -98,6 +98,8 @@ def train(config, workdir):
 
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
 
+    # eval(config, workdir, ckpt_num=-1)
+
 
 def eval(config, workdir, ckpt_num=-1):
 
@@ -109,8 +111,10 @@ def eval(config, workdir, ckpt_num=-1):
     fname = os.path.join(
         workdir, "score_norms", f"{step}-{'denoise' if denoise else ''}-score_norms.npz"
     )
-    
-    print("Evaluating {ckpt} with denoise = {denoise} and saving to {fname} if not already present.")
+
+    print(
+        f"Evaluating {ckpt} with denoise = {denoise} and saving to {fname} if not already present."
+    )
 
     if os.path.exists(fname):
         print(f"Loading from {fname}")
@@ -125,7 +129,11 @@ def eval(config, workdir, ckpt_num=-1):
         train_loader, val_loader, test_loader = get_dataset(config, train_mode=False)
         outdict = {}
         with torch.cuda.device(0):
-            for ds, loader in [("train", train_loader), ("val", val_loader), ("test", test_loader)]:
+            for ds, loader in [
+                ("train", train_loader),
+                ("val", val_loader),
+                ("test", test_loader),
+            ]:
                 score_norms = []
                 labels = []
                 for x_batch, y in loader:
@@ -154,7 +162,7 @@ def eval(config, workdir, ckpt_num=-1):
     np.random.seed(42)
     np.random.shuffle(X_train)
     X_val = outdict["val"]["score_norms"]
-    X_train = np.concatenate((X_train[:len(X_val)],X_val ))
+    X_train = np.concatenate((X_train[: len(X_val)], X_val))
     test_labels = outdict["test"]["labels"]
     X_test = outdict["test"]["score_norms"][test_labels == 0]
     X_ano = outdict["test"]["score_norms"][test_labels == 1]
