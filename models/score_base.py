@@ -34,8 +34,9 @@ class BaseScoreModel(pl.LightningModule):
         self.optimization_opts = config.optim
 
         # pdb.set_trace()
-        default_init_fn = build_default_init_fn()
-        self.net.apply(default_init_fn)
+        if config.model.name != "ncsnpp":
+            default_init_fn = build_default_init_fn()
+            self.net.apply(default_init_fn)
 
         self.save_hyperparameters(config.to_dict())
 
@@ -107,8 +108,8 @@ class BaseScoreModel(pl.LightningModule):
         return optimizer
 
     # Using custom or multiple metrics (default_hp_metric=False)
-    def on_train_start(self):
-        self.logger.log_hyperparams(self.hparams, {"val_err": 0})
+    # def on_train_start(self):
+    #     self.logger.log_hyperparams(self.hparams, {"val_err": 0})
 
     # def on_after_backward(self) -> None:
     #     if self.trainer.global_step % 10 == 0:
@@ -141,7 +142,6 @@ class BaseScoreModel(pl.LightningModule):
     def training_step(self, train_batch, batch_idxs) -> torch.Tensor:
 
         x, label = train_batch
-        # print(x.shape)
 
         idxs = torch.randint(
             self.num_scales,
@@ -169,7 +169,7 @@ class BaseScoreModel(pl.LightningModule):
     def validation_step(self, val_batch, batch_idxs) -> torch.Tensor:
         x_batch, label = val_batch
         # print(label, label.argmax(dim=1) == 0)
-        x_batch = x_batch[label == 0]
+        # x_batch = x_batch[label == 0]
 
         val_loss = 0.0
         val_err = 0.0
@@ -233,22 +233,41 @@ class VisionScoreModel(BaseScoreModel):
     def __init__(self, config: ml_collections.ConfigDict) -> None:
         super().__init__(config)
 
-        self.K = config.data.num_categories
+        self.K = config.data.categorical_channels
+        self.continuous_channels = config.data.continuous_channels
         self.register_buffer("taus", torch.tensor(get_taus(config), device=self.device))
+        if config.model.estimate_noise:
+            self.loss_fn = KL_loss
+        else:
+            self.loss_fn = categorical_dsm_loss
 
     def score_fn(self, x, t):
         tau = self.taus[t.long()][:, None, None, None]
         logit_noise_est = self.net(x, t.float())
+        # print(logit_noise_est.mean())
+        # pdb.set_trace()
         score = tau * self.K * F.softmax(logit_noise_est, dim=1) - tau
         return score
 
     def single_loss_step(self, x_batch, timestep_idxs):
 
-        # x = onehot_to_logit(x_batch)
+        # print("before noise", x_batch.mean(), x_batch.std())
         tau = self.taus[timestep_idxs][:, None, None, None]
-        x_noisy = log_concrete_sample(x_batch, tau=tau)
-        scores = self.forward(x_noisy, timestep_idxs.float())
-        cat_loss, rel_err = categorical_dsm_loss(x_batch, x_noisy, scores, tau)
+        # print(tau)
+        if self.continuous_channels > 0:
+            x_cat = x_batch[:, self.continuous_channels :]
+            x_cont = x_batch[:, : self.continuous_channels]
+            
+            x_cat_noisy = log_concrete_sample(x_cat, tau=tau)
+            # Cont channels used as conditioning information
+            x_input = torch.cat([x_cont, x_cat_noisy], dim=1)
+        else:
+            x_cat = x_batch
+            x_cat_noisy = x_input = log_concrete_sample(x_cat, tau=tau)
+        # print(x_cat_noisy.mean(), x_cat_noisy.std())
+        scores = self.forward(x_input, timestep_idxs.float())
+        cat_loss, rel_err = self.loss_fn(x_cat, x_cat_noisy, scores, tau)
+        # print(cat_loss, rel_err)
         cont_loss = 0.0
 
         return cat_loss, cont_loss, rel_err
