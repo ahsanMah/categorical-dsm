@@ -1,6 +1,7 @@
 import logging
-import pdb
 
+# import pdb
+import os
 import numpy as np
 import pandas as pd
 import torch
@@ -10,18 +11,19 @@ from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
-from torch.utils.data import DataLoader, ConcatDataset, Subset, TensorDataset, random_split
+from torch.utils.data import (
+    DataLoader,
+    ConcatDataset,
+    Subset,
+    TensorDataset,
+    random_split,
+)
 from torchvision.datasets import MNIST, FashionMNIST, Omniglot
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
 
 from configs.dataconfigs import get_config
 from models.mutils import onehot_to_logit
 
-# tabular_datasets = {
-#     "adult": "adult.csv",
-#     "bank": "bank.arff",
-#     "chess": "chess_krkopt_zerovsall.arff",
-# }
 tabular_datasets = {
     "bank": "bank-additional-ful-nominal.arff",
     "chess": "chess_krkopt_zerovsall.arff",
@@ -56,9 +58,14 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
         )
         # FIXME: There's prolly a better way to do this
         # Maybe have bins per class..?
-        N_CATEGORIES = config.data.num_categories
-        x = data.data.ravel() / 255.0
-        _, BINS = np.histogram(x[::2], bins=N_CATEGORIES - 1)
+        N_CATEGORIES = config.data.categorical_channels
+
+        if os.path.exists(f"data/mnist_bins={N_CATEGORIES}.npz"):
+            BINS = np.load(f"data/mnist_bins={N_CATEGORIES}.npz")["arr_0"]
+        else:
+            x = data.data.ravel() / 255.0
+            _, BINS = np.histogram(x, bins=N_CATEGORIES - 1)
+            np.savez_compressed(f"data/mnist_bins={N_CATEGORIES}.npz", BINS)
 
         def to_1hot(x):
             x = torch.bucketize(x, torch.from_numpy(BINS))
@@ -71,6 +78,7 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
             data_transform = Compose(
                 (
                     ToTensor(),
+                    Resize((img_sz, img_sz), interpolation=InterpolationMode.BILINEAR),
                     Lambda(to_1hot),
                     Lambda(onehot_to_logit),
                 )
@@ -105,7 +113,7 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
     # Subset inlier only
     # Split 80,20 train, test
     # split test 50,50 into val,test
-    #!FIXME: Uncomment this 
+    #!FIXME: Uncomment this
     logging.info(f"Splitting dataset with seed: {seed}")
 
     if dataset_name in tabular_datasets:
@@ -116,10 +124,14 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
         inlier_ds = Subset(data, inlier_idxs)
         outlier_ds = Subset(data, outlier_idxs)
         # pdb.set_trace()
-        train_ds, val_ds, test_ds = random_split(inlier_ds, [0.8, 0.1, 0.1], generator=generator)
+        train_ds, val_ds, test_ds = random_split(
+            inlier_ds, [0.8, 0.1, 0.1], generator=generator
+        )
         test_ds = ConcatDataset([test_ds, outlier_ds])
     else:
-        train_ds, val_ds, test_ds = random_split(data, [0.8, 0.1, 0.1], generator=generator)
+        train_ds, val_ds, test_ds = random_split(
+            data, [0.8, 0.1, 0.1], generator=generator
+        )
 
     logging.info(f"Train, Val, Test: {len(train_ds)}, {len(val_ds)}, {len(test_ds)}")
 
@@ -131,7 +143,7 @@ def get_dataset(config, train_mode=True, seed=42, return_with_loader=True):
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=12,
+            num_workers=8,
             pin_memory=True,
         )
 
@@ -169,7 +181,7 @@ def load_dataset(name):
     basedir = "data/categorical_data_outlier_detection/"
     dataconfig = get_config(name)
     label = dataconfig.label_column
-    
+
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
     else:
