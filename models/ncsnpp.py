@@ -277,8 +277,8 @@ class NCSNpp(nn.Module):
                     num_groups=min(in_ch // 4, 32), num_channels=in_ch, eps=1e-6
                 )
             )
-            modules.append(conv3x3(in_ch, in_channels, init_scale=init_scale))
-        # FIXME: add a final conv to get categorical channels
+            modules.append(conv3x3(in_ch, categorical_channels, init_scale=init_scale))
+        
         self.all_modules = nn.ModuleList(modules)
 
     def forward(self, x, time_cond):
