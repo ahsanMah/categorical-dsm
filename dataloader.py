@@ -20,7 +20,13 @@ from torch.utils.data import (
 )
 from torchvision.datasets import MNIST, FashionMNIST, Omniglot
 from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
-
+from torchvision.datasets import VOCSegmentation
+from torchvision.models.segmentation import (
+    deeplabv3_mobilenet_v3_large,
+    DeepLabV3_MobileNet_V3_Large_Weights,
+)
+import torchvision.transforms as T
+from models.segmentation.presets import SegmentationTrain, SegmentationEval
 from configs.dataconfigs import get_config
 from models.mutils import onehot_to_logit
 
@@ -37,13 +43,29 @@ def get_dataset(config, train_mode=True, return_with_loader=True):
 
     generator = torch.Generator().manual_seed(config.seed)
     dataset_name = config.data.dataset.lower()
+    rootdir = "/tmp/datasets"
 
     if dataset_name in tabular_datasets:
         data = build_tabular_ds(dataset_name)
 
     # If a torchvision dataset
+    elif dataset_name in ["voc"]:
+        img_sz = config.data.image_size
+
+        if train_mode:
+            preprocessing = SegmentationTrain(
+                out_size=img_sz, base_size=520, crop_size=480
+            )
+
+        else:
+            preprocessing = SegmentationEval(out_size=img_sz)
+        data = VOCSegmentation(
+            root=rootdir,
+            download=False,
+            image_set="train" if train_mode else "val",
+            transforms=preprocessing,
+        )
     elif dataset_name in ["mnist", "omniglot", "fashion"]:
-        rootdir = "/tmp/datasets"
         img_sz = config.data.image_size
 
         data = MNIST(
@@ -129,9 +151,8 @@ def get_dataset(config, train_mode=True, return_with_loader=True):
         )
         test_ds = ConcatDataset([test_ds, outlier_ds])
     else:
-        train_ds, val_ds, test_ds = random_split(
-            data, [0.8, 0.1, 0.1], generator=generator
-        )
+        train_ds, val_ds = random_split(data, [0.9, 0.1], generator=generator)
+        test_ds = val_ds  # WONT BE USED
 
     logging.info(f"Train, Val, Test: {len(train_ds)}, {len(val_ds)}, {len(test_ds)}")
 
@@ -143,7 +164,7 @@ def get_dataset(config, train_mode=True, return_with_loader=True):
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=8,
+            num_workers=0,
             pin_memory=True,
         )
 
@@ -164,7 +185,6 @@ def get_dataset(config, train_mode=True, return_with_loader=True):
     return train_ds, val_ds, test_ds
 
 
-# !TODO: Have this load raw data and labels separately
 def load_dataset(name):
     str_type = lambda x: str(x, "utf-8")
 
@@ -181,7 +201,6 @@ def load_dataset(name):
     basedir = "data/categorical_data_outlier_detection/"
     dataconfig = get_config(name)
     label = dataconfig.label_column
-
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
