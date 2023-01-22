@@ -15,12 +15,12 @@ def get_config():
 
     # evaluation
     config.eval = evaluate = ml_collections.ConfigDict()
-    evaluate.batch_size = 512
+    evaluate.batch_size = 64
 
     # data
     config.data = data = ml_collections.ConfigDict()
     data.dataset = "VOC"
-    data.image_size = 32
+    data.image_size = 128
     data.categorical_channels = 21
     data.continuous_channels = 3
 
@@ -30,7 +30,7 @@ def get_config():
     model.tau_min = 2.0
     model.tau_max = 20.0
     model.num_scales = 20
-    model.estimate_noise = False
+    model.estimate_noise = True
     model.act = 'swish'
     model.embedding_type = 'fourier'
 
@@ -39,8 +39,8 @@ def get_config():
     model.ema_rate = 0.999
     model.normalization = 'GroupNorm'
     model.nf = 128
-    model.ch_mult = (1, 2, 2, 2)
-    model.num_res_blocks = 8
+    model.ch_mult = (1, 1, 2, 2, 2)
+    model.num_res_blocks = 2
     model.attn_resolutions = (16,)
     model.resamp_with_conv = True
     model.conditional = True

@@ -25,7 +25,7 @@ def get_config():
 
     # optimization
     optim = config.optim
-    optim.weight_decay = 1e-5
+    optim.weight_decay = 1e-4
 
 
     return config

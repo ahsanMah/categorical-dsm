@@ -68,10 +68,26 @@ def get_config(name):
     kdd_probe.label_column = "class"
     kdd_probe.anomaly_label = "1"
 
+    solar = ml_collections.ConfigDict()
+    solar.dataset = "solar"
+    solar.categories = [6, 4, 2, 3, 3, 2, 2, 2, 8, 6, 3]
+    solar.numerical_features = 0
+    solar.label_column = "class"
+    solar.anomaly_label = "1"
+
+    cmc = ml_collections.ConfigDict()
+    cmc.dataset = "cmc"
+    cmc.categories = [4, 4, 2, 2, 4, 4, 2, 3]
+    cmc.numerical_features = 0
+    cmc.label_column = "class_numberofchildren"
+    cmc.anomaly_label = "1"
+
     config.census = census
     config.bank = bank
     config.chess = chess
     config.probe = kdd_probe
     config.u2r = kdd_u2r
+    config.solar = solar
+    config.cmc = cmc
 
     return config[name]

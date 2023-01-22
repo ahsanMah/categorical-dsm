@@ -17,7 +17,7 @@ def get_config():
     # model
     model = config.model
     model.estimate_noise = True
-    model.ndims = 512
+    model.ndims = 1024
     model.time_embedding_size = 128
     model.layers = 16
     model.dropout = 0.0
@@ -25,7 +25,7 @@ def get_config():
 
     # optimization
     optim = config.optim
-    optim.weight_decay = 1e-5
+    optim.weight_decay = 1e-4
 
 
     return config
