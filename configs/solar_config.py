@@ -9,10 +9,12 @@ def get_config():
     # training
     training = config.training
     training.batch_size = 128
-    training.n_steps = 1000001
+    training.n_steps = 100001
+    training.log_freq = 100
+    training.eval_freq = 100
 
     # data
-    config.data = get_data_config("u2r")
+    config.data = get_data_config("solar")
 
     # model
     model = config.model

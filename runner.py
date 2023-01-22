@@ -42,7 +42,7 @@ def train(config, workdir):
     snapshot_callback = ModelCheckpoint(
         dirpath=f"{workdir}/checkpoints/",
         monitor="val_loss",
-        filename="{step}-{val_loss:.2f}",
+        filename="{step}-{val_loss:.4f}",
         save_top_k=3,
         save_last=True,
         every_n_train_steps=config.training.snapshot_freq,

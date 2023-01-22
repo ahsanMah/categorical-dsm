@@ -36,6 +36,8 @@ tabular_datasets = {
     "census": "census.pkl",
     "probe": "kddcup99-corrected-probevsnormal-nominal-cleaned.arff",
     "u2r": "kddcup99-corrected-u2rvsnormal-nominal-cleaned.arff",
+    "solar": "solar-flare_FvsAll-cleaned.arff",
+    "cmc": "cmc-nominal.arff",
 }
 
 
