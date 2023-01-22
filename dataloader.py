@@ -39,14 +39,14 @@ tabular_datasets = {
 }
 
 
-def get_dataset(config, train_mode=True, return_with_loader=True):
+def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=True):
 
     generator = torch.Generator().manual_seed(config.seed)
     dataset_name = config.data.dataset.lower()
     rootdir = "/tmp/datasets"
 
     if dataset_name in tabular_datasets:
-        data = build_tabular_ds(dataset_name)
+        data = build_tabular_ds(dataset_name, return_logits=return_logits)
 
     # If a torchvision dataset
     elif dataset_name in ["voc"]:
@@ -164,7 +164,7 @@ def get_dataset(config, train_mode=True, return_with_loader=True):
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=0,
+            num_workers=12,
             pin_memory=True,
         )
 
@@ -218,7 +218,7 @@ def load_dataset(name):
     return X, y.squeeze(), dataconfig
 
 
-def build_tabular_ds(name):
+def build_tabular_ds(name, return_logits=True):
     X, y, dataconfig = load_dataset(name)
     to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
 
@@ -227,13 +227,15 @@ def build_tabular_ds(name):
     categorical_features = categorical_columns_selector(X)
     continuous_features = continuous_columns_selector(X)
 
-    encoder = OneHotEncoder(sparse=False)
+    cat_processor = [OneHotEncoder(sparse=False)]
+    if return_logits:
+        cat_processor.append(FunctionTransformer(to_logit))
     preprocessor = ColumnTransformer(
         transformers=[
             ("num", StandardScaler(), continuous_features),
             (
                 "cat",
-                make_pipeline(encoder, FunctionTransformer(to_logit)),
+                make_pipeline(*cat_processor),
                 categorical_features,
             ),
         ]
