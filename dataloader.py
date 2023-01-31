@@ -29,6 +29,8 @@ import torchvision.transforms as T
 from models.segmentation.presets import SegmentationTrain, SegmentationEval
 from configs.dataconfigs import get_config
 from models.mutils import onehot_to_logit
+from PIL import Image
+from tqdm.auto import tqdm
 
 tabular_datasets = {
     "bank": "bank-additional-ful-nominal.arff",
@@ -38,6 +40,7 @@ tabular_datasets = {
     "u2r": "kddcup99-corrected-u2rvsnormal-nominal-cleaned.arff",
     "solar": "solar-flare_FvsAll-cleaned.arff",
     "cmc": "cmc-nominal.arff",
+    "celeba": "list_attr_celeba_baldvsnonbald.arff"
 }
 
 
@@ -64,7 +67,7 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         data = VOCSegmentation(
             root=rootdir,
             download=False,
-            image_set="train" if train_mode else "val",
+            image_set="train",# if train_mode else "val",
             transforms=preprocessing,
         )
     elif dataset_name in ["mnist", "omniglot", "fashion"]:
@@ -166,14 +169,17 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=12,
+            num_workers=6,
             pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+            shuffle=train_mode,
         )
 
         val_ds = DataLoader(
             val_ds,
             batch_size=config.eval.batch_size,
-            num_workers=8,
+            num_workers=4,
             pin_memory=True,
         )
 
@@ -267,3 +273,35 @@ def build_tabular_ds(name, return_logits=True):
     logging.info(f"Loaded dataset: {name}, Shape: {X.shape}")
 
     return TensorDataset(X, y)
+
+class CachedVOCSegmentation(torch.utils.data.Dataset):
+    def __init__(self, root, image_set='train', download=False, transforms=None):
+        self.rootdir = root
+        self.image_set = image_set
+        self.transforms = transforms
+        
+        self.cache = []
+        self.voc = VOCSegmentation(
+            root=root,
+            download=download,
+            image_set=image_set,
+            transforms=None,
+        )
+
+        logging.info(f"Loading images from {image_set} set")
+        for idx in tqdm(range(len(self.voc)//100)):
+            img = Image.open(self.voc.images[idx]).convert("RGB")
+            target = Image.open(self.voc.masks[idx])
+            img = T.functional.pil_to_tensor(img)
+            target = torch.as_tensor(np.array(target)[None, ...], dtype=torch.int64)
+            # print(img.shape, target.shape)
+
+            self.cache.append((img, target))
+        
+        logging.info(f"Loaded {len(self.cache)} images")
+
+    def __getitem__(self, idx):
+        return self.transforms(*self.cache[idx])
+
+    def __len__(self):
+        return len(self.cache)
