@@ -82,6 +82,13 @@ def get_config(name):
     cmc.label_column = "class_numberofchildren"
     cmc.anomaly_label = "1"
 
+    celeba = ml_collections.ConfigDict()
+    celeba.dataset = "celeba"
+    celeba.categories = [2] * 39
+    celeba.numerical_features = 0
+    celeba.label_column = "class"
+    celeba.anomaly_label = "1"
+
     config.census = census
     config.bank = bank
     config.chess = chess
@@ -89,5 +96,6 @@ def get_config(name):
     config.u2r = kdd_u2r
     config.solar = solar
     config.cmc = cmc
+    config.celeba = celeba
 
     return config[name]
