@@ -55,9 +55,12 @@ class BaseScoreModel(pl.LightningModule):
             ema_callback = EMA(decay=0)
             ema_callback.load_state_dict(checkpoint["callbacks"]["EMA"])
             ema_callback.replace_model_weights(self)
-            print("Restored checkpoint from EMA...")
+            print(f"Restored EMA weights from checkpoint at step={checkpoint['global_step']}...")
             del ema_callback
-
+        
+        # as per https://github.com/pytorch/pytorch/issues/80809#issuecomment-1173481031
+        checkpoint['optimizer_states'][0]['param_groups'][0]['capturable']=True
+    
     def configure_callbacks(self):
 
         if self.ema_rate > 0.0:
@@ -75,6 +78,7 @@ class BaseScoreModel(pl.LightningModule):
             self.parameters(),
             lr=self.optimization_opts.lr,
             weight_decay=self.optimization_opts.weight_decay,
+            betas=(self.optimization_opts.beta1, self.optimization_opts.beta2),
         )
 
         if self.optimization_opts.scheduler != "none":
@@ -95,15 +99,15 @@ class BaseScoreModel(pl.LightningModule):
                     step_size=int(0.4 * self.training_opts.n_steps),
                     gamma=0.3,
                 )
+            elif self.optimization_opts.scheduler == "cosine":  # Dfaults to StepLR
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer=optimizer,
+                    T_max=self.training_opts.n_steps,
+                    eta_min=1e-5,
+                )
             else:
                 raise NotImplementedError("Scheduler not implemented")
             return {"optimizer": optimizer, "lr_scheduler": scheduler}
-
-        ########! FIXME: This problem still exists ###############
-        # I effectiveley CANNOT RESUME training is using Adam/AdamW
-        # Should help with loading the step variable
-        # as per https://github.com/pytorch/pytorch/issues/80809#issuecomment-1173481031
-        # optimizer.param_groups[0]['capturable'] = True
 
         return optimizer
 
@@ -199,11 +203,11 @@ class BaseScoreModel(pl.LightningModule):
 
         return val_loss
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def scorer(self, x_batch, denoise_step=False):
         self.eval()
         N = self.num_scales
-        score_norms = torch.empty(x_batch.shape[0], N, device=x_batch.device)
+        score_norms = torch.zeros(x_batch.shape[0], N, device=x_batch.device)
 
         # Single denoising step
         if denoise_step:
@@ -212,8 +216,16 @@ class BaseScoreModel(pl.LightningModule):
             score *= torch.linalg.norm(score.reshape(score.shape[0], -1), dim=1)[
                 :, None, None, None
             ]
-            x_batch += score
-            x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
+            if self.continuous_channels > 0:
+                x_cont = x_batch[:, : self.continuous_channels]
+                x_cat = x_batch[:, self.continuous_channels :]
+                x_cat += score
+                x_cat -= torch.logsumexp(x_cat, dim=1, keepdim=True)
+                # Cont channels only used as conditioning information
+                x_batch = torch.cat([x_cont, x_cat], dim=1)
+            else:
+                x_batch += score
+                x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
 
         for idx in range(N):
             vec_t = (
@@ -257,7 +269,7 @@ class VisionScoreModel(BaseScoreModel):
         if self.continuous_channels > 0:
             x_cat = x_batch[:, self.continuous_channels :]
             x_cont = x_batch[:, : self.continuous_channels]
-            
+
             x_cat_noisy = log_concrete_sample(x_cat, tau=tau)
             # Cont channels used as conditioning information
             x_input = torch.cat([x_cont, x_cat_noisy], dim=1)
@@ -423,7 +435,7 @@ class TabScoreModel(BaseScoreModel):
     def scorer(self, x_batch, denoise_step=False):
         self.eval()
         N = self.num_scales
-        score_norms = torch.empty(x_batch.shape[0], N, device=x_batch.device)
+        score_norms = torch.zeros(x_batch.shape[0], N, device=x_batch.device)
 
         x_cont = x_batch[:, : self.continuous_dims]
         x_categories = x_batch[:, self.continuous_dims :]
@@ -446,10 +458,8 @@ class TabScoreModel(BaseScoreModel):
             )
             score = torch.cat((cont_scores, cat_scores), dim=1)
             x_batch += score
-            # for x_cat in self.splitter(x_batch[:, self.continuous_dims :]):
-            #     x_batch[:, self.continuous_dims :] += x_cat_score
-
-            # x_batch -= torch.logsumexp(x_batch, dim=1, keepdim=True)
+            for x_cat in self.splitter(x_batch[:, self.continuous_dims :]):
+                x_cat -= torch.logsumexp(x_cat, dim=1, keepdim=True)
 
         x_cont = x_batch[:, : self.continuous_dims]
         x_categories = x_batch[:, self.continuous_dims :]
@@ -481,8 +491,9 @@ class TabScoreModel(BaseScoreModel):
 def smoother(class_logits: torch.Tensor, tau: torch.Tensor) -> torch.Tensor:
 
     eps = 1e-20
-    U = torch.rand_like(class_logits) * 1e-10
+    U = torch.rand_like(class_logits)
     epsilon_noise = -torch.log(-torch.log(U + eps) + eps)
+    epsilon_noise *= 1e-10
 
     x = (epsilon_noise + class_logits) / tau
     x = x - torch.logsumexp(x, dim=1, keepdim=True)

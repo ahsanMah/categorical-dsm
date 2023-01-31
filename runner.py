@@ -75,9 +75,9 @@ def train(config, workdir):
         save_dir=f"{workdir}/tensorboard_logs/", name="", default_hp_metric=False
     )
 
-    # ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
-    # if not os.path.exists(ckpt_path):
-    ckpt_path = None
+    ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
+    if not os.path.exists(ckpt_path):
+        ckpt_path = None
 
     trainer = pl.Trainer(
         accelerator=str(config.device),
@@ -104,7 +104,7 @@ def train(config, workdir):
 def eval(config, workdir, ckpt_num=-1):
 
     denoise = config.msma.denoise
-    ckpt_dir = os.path.join(workdir, "checkpoints")
+    ckpt_dir = os.path.join(workdir, "checkpoints-meta")
     ckpts = sorted(os.listdir(ckpt_dir))
     ckpt = ckpts[ckpt_num]
     step = ckpt.split("-")[0]
