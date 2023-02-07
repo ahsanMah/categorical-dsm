@@ -6,7 +6,7 @@ def get_config():
     config = ml_collections.ConfigDict()
     # training
     config.training = training = ml_collections.ConfigDict()
-    training.batch_size = 32
+    training.batch_size = 48
     training.n_steps = 1000001
     training.log_freq = 200
     training.eval_freq = 1000
@@ -20,10 +20,10 @@ def get_config():
     # data
     config.data = data = ml_collections.ConfigDict()
     data.dataset = "VOC"
-    data.image_size = 128
+    data.image_size = 256
     data.categorical_channels = 21
     data.continuous_channels = 3
-    data.logits = True
+    data.logits = False
     data.cached = False
     config.data.image_set = "train"
 
@@ -41,8 +41,8 @@ def get_config():
     model.scale_by_sigma = False
     model.ema_rate = 0.999
     model.normalization = 'GroupNorm'
-    model.nf = 128
-    model.ch_mult = (1, 1, 2, 2, 2)
+    model.nf = 32
+    model.ch_mult = (1, 1, 2, 4, 8, 16)
     model.num_res_blocks = 2
     model.attn_resolutions = (16,)
     model.resamp_with_conv = True
