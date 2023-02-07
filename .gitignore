@@ -1,5 +1,6 @@
 # Repo specific ignores
-results/
+*.npz
+results*/
 data/
 wandb/
 workdir/

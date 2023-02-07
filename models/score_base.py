@@ -55,12 +55,14 @@ class BaseScoreModel(pl.LightningModule):
             ema_callback = EMA(decay=0)
             ema_callback.load_state_dict(checkpoint["callbacks"]["EMA"])
             ema_callback.replace_model_weights(self)
-            print(f"Restored EMA weights from checkpoint at step={checkpoint['global_step']}...")
+            print(
+                f"Restored EMA weights from checkpoint at step={checkpoint['global_step']}..."
+            )
             del ema_callback
-        
+
         # as per https://github.com/pytorch/pytorch/issues/80809#issuecomment-1173481031
-        checkpoint['optimizer_states'][0]['param_groups'][0]['capturable']=True
-    
+        checkpoint["optimizer_states"][0]["param_groups"][0]["capturable"] = True
+
     def configure_callbacks(self):
 
         if self.ema_rate > 0.0:
@@ -107,7 +109,11 @@ class BaseScoreModel(pl.LightningModule):
                 )
             else:
                 raise NotImplementedError("Scheduler not implemented")
-            return {"optimizer": optimizer, "lr_scheduler": scheduler}
+            lr_scheduler_config = {
+                "scheduler": scheduler,
+                "interval": "step",
+            }
+            return [optimizer], [lr_scheduler_config]
 
         return optimizer
 
@@ -169,6 +175,10 @@ class BaseScoreModel(pl.LightningModule):
         self.log("rel_err", rel_err.item())
 
         return loss
+
+    # def on_train_epoch_end(self) -> None:
+    #     self.log("lr", self.trainer.optimizers[0].param_groups[0]["lr"])
+    #     return super().on_train_epoch_end()
 
     def validation_step(self, val_batch, batch_idxs) -> torch.Tensor:
         x_batch, label = val_batch
@@ -261,6 +271,7 @@ class VisionScoreModel(BaseScoreModel):
         score = tau * self.K * F.softmax(logit_noise_est, dim=1) - tau
         return score
 
+    # @torch.jit.script
     def single_loss_step(self, x_batch, timestep_idxs):
 
         # print("before noise", x_batch.mean(), x_batch.std())
