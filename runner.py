@@ -43,8 +43,8 @@ def train(config, workdir):
         dirpath=f"{workdir}/checkpoints/",
         monitor="val_loss",
         filename="{step}-{val_loss:.4f}",
-        save_top_k=3,
-        save_last=True,
+        save_top_k=2,
+        save_last=False,
         every_n_train_steps=config.training.snapshot_freq,
     )
 
@@ -68,7 +68,7 @@ def train(config, workdir):
                 ),
             ],
         )
-
+    
     # wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
     wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
     tb_logger = TensorBoardLogger(
@@ -80,6 +80,7 @@ def train(config, workdir):
         ckpt_path = None
 
     trainer = pl.Trainer(
+        # precision=16,
         accelerator=str(config.device),
         default_root_dir=workdir,
         # max_epochs=config.training.n_epochs,
@@ -103,8 +104,10 @@ def train(config, workdir):
 
 def eval(config, workdir, ckpt_num=-1):
 
+    assert config.msma.checkpoint in ["best", "last"]
     denoise = config.msma.denoise
-    ckpt_dir = os.path.join(workdir, "checkpoints-meta")
+    ckpt_dir = "checkpoints" if config.msma.checkpoint == "best" else "checkpoints-meta"
+    ckpt_dir = os.path.join(workdir, ckpt_dir)
     ckpts = sorted(os.listdir(ckpt_dir))
     ckpt = ckpts[ckpt_num]
     step = ckpt.split("-")[0]
