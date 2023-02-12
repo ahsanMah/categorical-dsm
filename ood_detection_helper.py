@@ -60,7 +60,7 @@ def auxiliary_model_analysis(
 
     print("=====" * 5 + " Training KD Tree " + "=====" * 5)
 
-    N_NEIGHBOURS = 2
+    N_NEIGHBOURS = 3
     nbrs = NearestNeighbors(n_neighbors=N_NEIGHBOURS, algorithm="kd_tree").fit(X_train)
 
     kd_train_score, indices = nbrs.kneighbors(X_train)
@@ -148,12 +148,12 @@ def ood_metrics(
 
     if find_fpr:
         tpr95_idx = np.where(np.isclose(tpr, 0.95, rtol=1e-3, atol=1e-4))[0][0]
-        tpr80_idx = np.where(np.isclose(tpr, 0.8, rtol=1e-2, atol=1e-3))[0][0]
+        tpr80_idx = tpr95_idx#np.where(np.isclose(tpr, 0.8, rtol=1e-2, atol=1e-3))[0][0]
     else:
         # This is becasuse numpy bugs out when the scores are fully separable
         # OR fully unseparable :D
         tpr95_idx = np.where(np.isclose(tpr, 0.95, rtol=1e-1, atol=1e-1))[0][0]
-        tpr80_idx = np.where(np.isclose(tpr, 0.8, rtol=1e-1, atol=1e-1))[0][0]
+        tpr80_idx = tpr95_idx#np.where(np.isclose(tpr, 0.8, rtol=1e-1, atol=1e-1))[0][0]
     #         tpr95_idx, tpr80_idx = 0,0 #tpr95_idx
 
     # Detection Error
@@ -306,13 +306,16 @@ def train_gmm(
         # ICA__max_iter=[100000],
         # ICA__tol=[1e-4],
         GMM__n_components=components_range,
+        GMM__max_iter=[1000],
         GMM__covariance_type=["full"],
+        GMM__init_params = ['kmeans'],
+        # GMM__n_init=[5],
     )  # Full always performs best
 
     grid = GridSearchCV(
         estimator=gmm_clf,
         param_grid=param_grid,
-        cv=5,
+        cv=5 if len(list(components_range)) > 1 else 2,
         n_jobs=1,
         verbose=1,
         scoring=scorer,
