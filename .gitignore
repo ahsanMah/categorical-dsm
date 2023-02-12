@@ -8,6 +8,10 @@ workdir/
 **lightning_logs/
 **.vscode
 
+# Ignoring from sub repos
+**.git-ignore
+*pics
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
