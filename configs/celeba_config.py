@@ -10,7 +10,7 @@ def get_config():
     # training
     training = config.training
     training.batch_size = 2048
-    training.n_steps = 1000001
+    training.n_steps = 2000001
 
     # data
     config.data = get_data_config("celeba")
@@ -27,6 +27,6 @@ def get_config():
     # optimization
     optim = config.optim
     optim.weight_decay = 1e-4
-    optim.scheduler = "cosine"
+    # optim.scheduler = "cosine"
 
     return config

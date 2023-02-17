@@ -26,6 +26,8 @@ def get_config():
     # optimization
     optim = config.optim
     optim.weight_decay = 1e-4
+    optim.lr = 1e-3
+    optim.scheduler = "cosine"
 
 
     return config

@@ -10,7 +10,7 @@ def get_config():
     # training
     training = config.training
     training.batch_size = 2048
-    training.n_steps = 300001
+    training.n_steps = 150001
     training.log_freq = 1000
     training.eval_freq = 1000
 
@@ -28,6 +28,8 @@ def get_config():
 
     # optimization
     optim = config.optim
-    optim.weight_decay = 1e-5
+    optim.lr = 1e-3
+    optim.weight_decay = 1e-4
+    optim.scheduler = "cosine"
 
     return config
