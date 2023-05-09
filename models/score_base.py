@@ -184,19 +184,21 @@ class BaseScoreModel(pl.LightningModule):
             dtype=torch.long,
             requires_grad=False,
         )
+        L = self.num_scales
 
-        for idx in range(0, self.num_scales):
+        for idx in range(0, self.num_scales, 3):
             cat_loss, cont_loss, rel_err = self.single_loss_step(x_batch, t * idx)
             loss = cat_loss + cont_loss
             val_loss += loss
             val_err += rel_err
 
-            if idx % 3 == 0:
+            if idx % (L//3) == 0:
                 self.log(f"val_loss/{idx}", loss.item())
                 self.log(f"val_err/{idx}", rel_err.item())
-
-        val_loss /= self.num_scales
-        val_err /= self.num_scales
+        
+        denom=len(range(0, self.num_scales, 3))
+        val_loss /= denom
+        val_err /= denom
 
         self.log("val_loss", val_loss.item(), prog_bar=True)
         self.log("val_err", val_err.item())
