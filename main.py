@@ -2,7 +2,6 @@ from absl import app
 from absl import flags
 import ml_collections
 from ml_collections.config_flags import config_flags
-import tensorflow as tf
 import wandb
 import runner
 import wandb

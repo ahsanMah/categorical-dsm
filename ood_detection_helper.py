@@ -131,7 +131,7 @@ def plot_curves(inlier_score, outlier_score, label, axs=()):
     axs[1].legend()
 
     if len(axs) == 0:
-        fig.suptitle("{} vs {}".format(*labels), fontsize=20)
+        fig.suptitle("{} vs {}".format(*label), fontsize=20)
         plt.show()
         plt.close()
 
