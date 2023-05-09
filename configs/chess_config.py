@@ -8,7 +8,7 @@ def get_config():
 
     # training
     training = config.training
-    training.batch_size = 128
+    training.batch_size = 2048
     training.n_steps = 1000001
 
     # data
@@ -19,13 +19,16 @@ def get_config():
     model.estimate_noise = True
     model.ndims = 1024
     model.time_embedding_size = 128
-    model.layers = 16
+    model.layers = 20
     model.dropout = 0.0
     model.act = "gelu"
 
     # optimization
     optim = config.optim
     optim.weight_decay = 1e-4
+    optim.lr = 1e-3
+    optim.scheduler = "cosine"
+
 
 
     return config

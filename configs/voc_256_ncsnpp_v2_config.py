@@ -6,7 +6,7 @@ def get_config():
     config = ml_collections.ConfigDict()
     # training
     config.training = training = ml_collections.ConfigDict()
-    training.batch_size = 32
+    training.batch_size = 24
     training.n_steps = 1000001
     training.log_freq = 200
     training.eval_freq = 1000
@@ -20,12 +20,12 @@ def get_config():
     # data
     config.data = data = ml_collections.ConfigDict()
     data.dataset = "VOC"
-    data.image_size = 128
+    data.image_size = 256
     data.categorical_channels = 21
     data.continuous_channels = 3
     data.logits = True
-    data.cached = False
-    config.data.image_set = "train"
+    data.cached = True
+    data.image_set = "train"
 
     # model
     config.model = model = ml_collections.ConfigDict()
@@ -41,8 +41,8 @@ def get_config():
     model.scale_by_sigma = False
     model.ema_rate = 0.999
     model.normalization = 'GroupNorm'
-    model.nf = 128
-    model.ch_mult = (1, 1, 2, 2, 2)
+    model.nf = 64
+    model.ch_mult = (1, 2, 2, 2, 4, 4)
     model.num_res_blocks = 2
     model.attn_resolutions = (16,)
     model.resamp_with_conv = True
@@ -51,8 +51,8 @@ def get_config():
     model.fir_kernel = [1, 3, 3, 1]
     model.skip_rescale = True
     model.resblock_type = 'biggan'
-    model.progressive = 'none'
-    model.progressive_input = 'residual'
+    model.progressive = 'output_skip'
+    model.progressive_input = 'input_skip'
     model.progressive_combine = 'sum'
     model.attention_type = 'ddpm'
     model.init_scale = 0.
@@ -67,7 +67,7 @@ def get_config():
     config.optim = optim = ml_collections.ConfigDict()
     optim.weight_decay = 0
     optim.optimizer = "AdamW"
-    optim.lr = 2e-4
+    optim.lr = 3e-4
     optim.grad_clip = 1.0
     optim.scheduler = "none"
     optim.beta1 = 0.9

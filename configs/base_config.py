@@ -28,7 +28,7 @@ def get_config():
     model.sigma_min = 1e-1
     model.sigma_max = 1.0
     model.num_scales = 20
-    model.estimate_noise = False
+    model.estimate_noise = True
     model.ndims = 512
     model.time_embedding_size = 128
     model.layers = 12
@@ -42,11 +42,14 @@ def get_config():
     optim.weight_decay = 0.0
     optim.optimizer = "AdamW"
     optim.lr = 3e-4
+    optim.beta1 = 0.9
+    optim.beta2 = 0.999
     optim.grad_clip = 1.0
     optim.scheduler = "none"
 
     config.msma = msma = ml_collections.ConfigDict()
     msma.denoise = True
+    msma.checkpoint = "best"
 
     config.devtest = False
     config.seed = 42

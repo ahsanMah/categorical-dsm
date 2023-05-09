@@ -3,16 +3,17 @@ import ml_collections
 from configs.base_config import get_config as get_base_config
 from configs.dataconfigs import get_config as get_data_config
 
+
 def get_config():
     config = get_base_config()
 
     # training
     training = config.training
-    training.batch_size = 512
-    training.n_steps = 600001
+    training.batch_size = 2048
+    training.n_steps = 2000001
 
     # data
-    config.data = get_data_config("solar")
+    config.data = get_data_config("celeba")
 
     # model
     model = config.model
@@ -26,8 +27,6 @@ def get_config():
     # optimization
     optim = config.optim
     optim.weight_decay = 1e-4
-    optim.lr = 3e-4
-    optim.scheduler = "cosine"
-
+    # optim.scheduler = "cosine"
 
     return config

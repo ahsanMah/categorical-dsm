@@ -98,3 +98,12 @@ class Normalize:
     def __call__(self, image, target):
         image = F.normalize(image, mean=self.mean, std=self.std)
         return image, target
+
+class Resize:
+    def __init__(self, x_size, y_size):
+        self.x_size = x_size
+        self.y_size = y_size
+    def __call__(self, image, target):
+        image = F.resize(image, (self.x_size, self.y_size))
+        target = F.resize(target, (self.x_size, self.y_size), interpolation=T.InterpolationMode.NEAREST)
+        return image, target

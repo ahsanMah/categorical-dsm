@@ -18,6 +18,7 @@ def gumbel_grad(x_sample, class_logits, tau, K):
 
     return grad
 
+@torch.jit.script
 def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     """
     x_logit: Logit probs of original sample
@@ -39,6 +40,7 @@ def categorical_dsm_loss(x_logit, x_noisy, scores, tau):
     return torch.mean(loss), rel_err
 
 kl_loss_fn = torch.nn.KLDivLoss(reduction="batchmean")
+@torch.jit.script
 def KL_loss(x_logit, x_noisy, model_out, tau):
     """
     x_logit: Logit probs of original sample
@@ -48,7 +50,7 @@ def KL_loss(x_logit, x_noisy, model_out, tau):
     K = x_logit.shape[1]
     targets = F.softmax(x_logit - tau * x_noisy, dim=1)
     loss = kl_loss_fn(F.log_softmax(model_out, dim=1), targets)
-
+    # print("using kl loss")
     with torch.no_grad():
         scores = -tau + tau * K * torch.softmax(model_out, dim=1)
         targets = log_concrete_grad(x_noisy, x_logit, tau=tau)
@@ -59,6 +61,7 @@ def KL_loss(x_logit, x_noisy, model_out, tau):
     
     return loss, rel_err
 
+@torch.jit.script
 def continuous_dsm_loss(noise, scores, sigmas):
     batch_sz = scores.shape[0]
     D = scores.shape[1]

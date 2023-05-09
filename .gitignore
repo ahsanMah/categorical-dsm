@@ -1,11 +1,16 @@
 # Repo specific ignores
-results/
+*.npz
+results*/
 data/
 wandb/
 workdir/
 **.ipynb_checkpoints
 **lightning_logs/
 **.vscode
+
+# Ignoring from sub repos
+**.git-ignore
+*pics
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

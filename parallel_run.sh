@@ -16,7 +16,7 @@ do
 done
 
 CONFIG="configs/${dataset}_config.py"
-WORKDIR="results/$dataset/seed"
+WORKDIR="results/${dataset}/seed"
 
 echo "mode:$mode dataset:$dataset on gpu:$cuda_device devtest_enabled:$devtest"
 

@@ -2,6 +2,7 @@ import logging
 
 # import pdb
 import os
+from typing import Tuple
 import numpy as np
 import pandas as pd
 import torch
@@ -29,6 +30,10 @@ import torchvision.transforms as T
 from models.segmentation.presets import SegmentationTrain, SegmentationEval
 from configs.dataconfigs import get_config
 from models.mutils import onehot_to_logit
+from PIL import Image
+from tqdm.auto import tqdm
+
+import models.segmentation.module_transforms as SegT
 
 tabular_datasets = {
     "bank": "bank-additional-ful-nominal.arff",
@@ -38,6 +43,7 @@ tabular_datasets = {
     "u2r": "kddcup99-corrected-u2rvsnormal-nominal-cleaned.arff",
     "solar": "solar-flare_FvsAll-cleaned.arff",
     "cmc": "cmc-nominal.arff",
+    "celeba": "list_attr_celeba_baldvsnonbald.arff",
 }
 
 
@@ -54,19 +60,46 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
     elif dataset_name in ["voc"]:
         img_sz = config.data.image_size
 
-        if train_mode:
-            preprocessing = SegmentationTrain(
-                out_size=img_sz, base_size=520, crop_size=480
+        if config.data.cached:
+            # print()
+            if train_mode:
+                preprocessing = TrainTransform(
+                    out_size=img_sz,
+                    base_size=520,
+                    crop_size=480,
+                    to_logits=config.data.logits,
+                )
+
+            else:
+                preprocessing = SegmentationEval(
+                    out_size=img_sz, to_logits=config.data.logits
+                )
+            data = CachedVOCSegmentation(
+                root=rootdir,
+                download=False,
+                image_set="train",  # if train_mode else "val",
+                transforms=preprocessing,
+            )
+        else:
+            if train_mode:
+                preprocessing = SegmentationTrain(
+                    out_size=img_sz,
+                    base_size=520,
+                    crop_size=480,
+                    to_logits=config.data.logits,
+                )
+
+            else:
+                preprocessing = SegmentationEval(
+                    out_size=img_sz, to_logits=config.data.logits
+                )
+            data = VOCSegmentation(
+                root=rootdir,
+                download=False,
+                image_set=config.data.image_set,
+                transforms=preprocessing,
             )
 
-        else:
-            preprocessing = SegmentationEval(out_size=img_sz)
-        data = VOCSegmentation(
-            root=rootdir,
-            download=False,
-            image_set="train" if train_mode else "val",
-            transforms=preprocessing,
-        )
     elif dataset_name in ["mnist", "omniglot", "fashion"]:
         img_sz = config.data.image_size
 
@@ -166,14 +199,17 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=12,
+            num_workers=6,
             pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=8,
+            shuffle=train_mode,
         )
 
         val_ds = DataLoader(
             val_ds,
             batch_size=config.eval.batch_size,
-            num_workers=8,
+            num_workers=6,
             pin_memory=True,
         )
 
@@ -267,3 +303,118 @@ def build_tabular_ds(name, return_logits=True):
     logging.info(f"Loaded dataset: {name}, Shape: {X.shape}")
 
     return TensorDataset(X, y)
+
+
+class CachedVOCSegmentation(torch.utils.data.Dataset):
+    def __init__(self, root, image_set="train", download=False, transforms=None):
+        self.rootdir = root
+        self.image_set = image_set
+        self.transforms = transforms
+
+        self.cache = []
+        self.voc = VOCSegmentation(
+            root=root,
+            download=download,
+            image_set=image_set,
+            transforms=None,
+        )
+
+        logging.info(f"Loading images from {image_set} set")
+        for idx in tqdm(range(len(self.voc))):
+            img, target = self.voc[idx]
+            # img = Image.open(self.voc.images[idx]).convert("RGB")
+            # target = Image.open(self.voc.masks[idx])
+            # print(img.size, target.size)
+
+            img = T.functional.pil_to_tensor(img)
+            img = T.functional.convert_image_dtype(img, dtype=torch.float32)
+            target = torch.as_tensor(np.array(target)[None, ...], dtype=torch.int64)
+            # print(img.shape, target.shape)
+            # break
+
+            self.cache.append((img, target))
+
+        logging.info(f"Loaded {len(self.cache)} images")
+
+    def __getitem__(self, idx):
+        return self.transforms(*self.cache[idx])
+
+    def __len__(self):
+        return len(self.cache)
+
+
+class MultiSequential(torch.nn.Sequential):
+    def __init__(self, *args):
+        super().__init__(*args)
+
+    def forward(self, x: Tuple[torch.Tensor, torch.Tensor]):
+        for module in self:
+            x = module(x)
+        return x
+
+
+class TrainTransform(torch.nn.Module):
+    def __init__(
+        self,
+        *,
+        out_size,
+        base_size,
+        crop_size,
+        hflip_prob=0.5,
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+        to_logits=False,
+    ):
+        super().__init__()
+
+        min_size = int(0.5 * base_size)
+        max_size = int(2.0 * base_size)
+        self.out_sz = out_size
+
+        trans = [SegT.RandomResize(min_size, max_size)]
+        # trans = []
+        if hflip_prob > 0:
+            trans.append(SegT.RandomHorizontalFlip(hflip_prob))
+        trans.extend(
+            [
+                SegT.RandomCrop(crop_size),
+                SegT.RandomResize(self.out_sz, self.out_sz),
+                SegT.Normalize(mean=mean, std=std),
+            ]
+        )
+        logging.info("Compiling transforms...")
+        self.transforms = MultiSequential(*trans)
+        self.transforms = torch.jit.script(self.transforms)
+        logging.info("Completed.")
+        # self.to_onehot = partial(F.one_hot, num_classes=21)
+        def build_one_hot_transform(to_logits=to_logits):
+            if to_logits:
+
+                @torch.jit.script
+                def to_onehot(target):
+                    target[target == 255] = 0
+                    target = F.one_hot(target, num_classes=21).squeeze().float()
+                    target = target.permute(2, 0, 1)
+                    target = torch.log(torch.clamp(target, min=1e-5, max=1.0))
+                    return target
+
+            else:
+
+                @torch.jit.script
+                def to_onehot(target):
+                    target[target == 255] = 0
+                    target = F.one_hot(target, num_classes=21).squeeze().float()
+                    target = target.permute(2, 0, 1)
+                    return target
+
+            return to_onehot
+
+        self.to_onehot = build_one_hot_transform()
+
+    def __call__(self, img, target):
+        img, target = self.transforms((img, target))
+        target = self.to_onehot(target)
+        img = torch.cat((img, target), dim=0)
+        return img, 0
+
+

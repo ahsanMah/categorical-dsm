@@ -278,6 +278,8 @@ class NCSNpp(nn.Module):
                 )
             )
             modules.append(conv3x3(in_ch, categorical_channels, init_scale=init_scale))
+        else:
+            modules.append(conv1x1(pyramid_ch, categorical_channels, init_scale=init_scale))
         
         self.all_modules = nn.ModuleList(modules)
 
@@ -422,6 +424,8 @@ class NCSNpp(nn.Module):
 
         if self.progressive == "output_skip":
             h = pyramid
+            h = modules[m_idx](h)
+            m_idx += 1
         else:
             h = self.act(modules[m_idx](h))
             m_idx += 1
