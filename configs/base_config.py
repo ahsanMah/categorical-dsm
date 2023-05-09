@@ -12,6 +12,7 @@ def get_config():
     training.eval_freq = 1000
     training.checkpoint_freq = 2000
     training.snapshot_freq = 10000
+    training.resume=False
 
     # evaluation
     config.eval = evaluate = ml_collections.ConfigDict()

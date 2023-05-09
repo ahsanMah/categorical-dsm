@@ -23,7 +23,8 @@ sns.set_theme()
 
 def train(config, workdir):
 
-    pl.utilities.seed.seed_everything(config.seed)
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed)
 
     if "tab" in config.model.name:
         model = TabScoreModel(config)
@@ -75,10 +76,12 @@ def train(config, workdir):
         save_dir=f"{workdir}/tensorboard_logs/", name="", default_hp_metric=False
     )
 
-    ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
-    if not os.path.exists(ckpt_path):
-        ckpt_path = None
-
+    ckpt_path = None
+    if config.training.resume:
+        ckpt_path = f"{workdir}/checkpoints-meta/last.ckpt"
+        if not os.path.exists(ckpt_path):
+            raise FileNotFoundError
+    
     trainer = pl.Trainer(
         # precision=16,
         accelerator=str(config.device),
@@ -94,7 +97,6 @@ def train(config, workdir):
         check_val_every_n_epoch=None,
         logger=[tb_logger, wandb_logger],
         # num_sanity_val_steps=0,
-        resume_from_checkpoint=ckpt_path,
     )
 
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
