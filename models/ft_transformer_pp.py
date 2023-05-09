@@ -140,8 +140,6 @@ class FTTransformer(nn.Module):
     def __init__(
         self,
         config,
-        heads=8,
-        dim_head=16,
     ):
         super().__init__()
 
@@ -183,7 +181,9 @@ class FTTransformer(nn.Module):
             )
 
         # transformer
-
+        self.attention_heads = heads = config.model.attention_heads
+        self.attention_dim_head = dim_head = config.model.attention_dim_head
+        
         self.transformer = Transformer(
             dim=dim,
             time_emb_sz=embedding_size,
