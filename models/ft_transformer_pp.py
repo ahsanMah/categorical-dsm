@@ -8,7 +8,7 @@ from torch import nn, einsum
 
 from einops import rearrange, repeat
 
-from models.layers import FiLMBlock
+from models.layers import GaussianFourierProjection, PositionalEncoding
 
 # feedforward and attention
 
@@ -17,16 +17,6 @@ class GEGLU(nn.Module):
     def forward(self, x):
         x, gates = x.chunk(2, dim=-1)
         return x * F.gelu(gates)
-
-
-def FeedForward(dim, mult=4, dropout=0.0):
-    return nn.Sequential(
-        nn.LayerNorm(dim),
-        nn.Linear(dim, dim * mult * 2),
-        GEGLU(),
-        nn.Dropout(dropout),
-        nn.Linear(dim * mult, dim),
-    )
 
 
 class FeedForwardpp(nn.Module):
@@ -139,57 +129,64 @@ class NumericalEmbedder(nn.Module):
         return x * self.weights + self.biases
 
 
+def to_logits(dim, dim_out):
+    return nn.Sequential(nn.LayerNorm(dim), nn.LeakyReLU(), nn.Linear(dim, dim_out))
+
+
 # main class
 
 
 class FTTransformer(nn.Module):
     def __init__(
         self,
-        *,
         config,
-        categories,
-        num_continuous,
-        dim,
-        depth,
-        heads,
+        heads=8,
         dim_head=16,
-        dim_out=1,
-        num_special_tokens=2,
-        attn_dropout=0.0,
-        ff_dropout=0.0,
     ):
         super().__init__()
 
+        self.ndims = dim = config.model.ndims
+        self.layers = depth = config.model.layers
+        self.dropout = attn_dropout = ff_dropout = config.model.dropout
+        self.embedding_size = embedding_size = config.model.time_embedding_size
 
         # categories related calculations
         self.categories = categories = config.data.categories
-        self.num_categories = len(categories)
+        self.num_classes = len(categories)
         self.num_unique_categories = sum(categories)
 
         # create category embeddings
         # each categorical softmax-vector will get projected into an embedding space
-        self.categorical_embeds = torch.nn.ModuleDict(
+        self.categorical_embedder = torch.nn.ModuleDict(
             {
                 "proj_in": torch.nn.ModuleList(
                     [torch.nn.Linear(c, dim) for c in categories]
                 ),
                 "proj_out": torch.nn.ModuleList(
-                    [torch.nn.Linear(dim, c) for c in categories]
+                    [to_logits(dim, c) for c in categories]
                 ),
             }
         )
 
         # continuous
 
-        self.num_continuous = num_continuous
+        self.num_continuous = config.data.numerical_features
 
         if self.num_continuous > 0:
-            self.numerical_embedder = NumericalEmbedder(dim, self.num_continuous)
+            self.numerical_embedder = torch.nn.ModuleDict(
+                {
+                    "proj_in": NumericalEmbedder(dim, self.num_continuous),
+                    "proj_out": torch.nn.ModuleList(
+                        [to_logits(dim, 1) for _ in range(self.num_continuous)]
+                    ),
+                }
+            )
 
         # transformer
 
         self.transformer = Transformer(
             dim=dim,
+            time_emb_sz=embedding_size,
             depth=depth,
             heads=heads,
             dim_head=dim_head,
@@ -197,10 +194,17 @@ class FTTransformer(nn.Module):
             ff_dropout=ff_dropout,
         )
 
-        # to logits
-
-        self.to_logits = nn.Sequential(
-            nn.LayerNorm(dim), nn.ReLU(), nn.Linear(dim, dim_out)
+        time_encoder = (
+            GaussianFourierProjection
+            if config.model.embedding_type == "fourier"
+            else PositionalEncoding
+        )
+        self.time_embed = nn.Sequential(
+            time_encoder(embedding_size=embedding_size),
+            nn.Linear(embedding_size, embedding_size),
+            nn.SiLU(),
+            nn.Linear(embedding_size, embedding_size),
+            nn.SiLU(),
         )
 
     def forward(self, x, t, return_attn=False):
@@ -208,45 +212,66 @@ class FTTransformer(nn.Module):
         #     x_categ.shape[-1] == self.num_categories
         # ), f"you must pass in {self.num_categories} values for your categories input"
 
-        x_numer, x_categ = torch.split(
-            x, [self.num_continuous, self.num_unique_categories]
-        )
+        emb = self.time_embed(t)
 
-        xs = []
+        x_numer, x_categ = torch.split(
+            x, [self.num_continuous, self.num_unique_categories], dim=1
+        )
 
         # add numerically embedded tokens
         if self.num_continuous > 0:
-            x_numer = self.numerical_embedder(x_numer)
-            xs.append(x_numer)
+            x_numer = self.numerical_embedder["proj_in"](x_numer)
 
         # categorical embedded tokens
         x_cats = torch.split(x_categ, self.categories, dim=1)
         x_cat_embs = torch.stack(
-            [embedder(cat) for cat, embedder in zip(x_cats, self.categorical_embeds)], dim=1
+            [
+                embedder(cat)
+                for cat, embedder in zip(x_cats, self.categorical_embedder["proj_in"])
+            ],
+            dim=1,
         )
 
         # concat categorical and numerical
-
-        x = torch.cat(xs, dim=1)
-
-        # append cls tokens
-        b = x.shape[0]
-        cls_tokens = repeat(self.cls_token, "1 1 d -> b 1 d", b=b)
-        x = torch.cat((cls_tokens, x), dim=1)
+        if self.num_continuous > 0:
+            x_numer = self.numerical_embedder["proj_in"](x_numer)
+            # print(x_numer.shape, x_cat_embs.shape)
+            x = torch.cat((x_numer, x_cat_embs), dim=1)
+        else:
+            x = x_cat_embs
 
         # attend
 
-        x, attns = self.transformer(x, return_attn=True)
+        x, attns = self.transformer(x, emb, return_attn=True)
 
-        # get cls token
+        # transform embeddings into data space
+        x = x.permute(1, 0, 2)
+        # print(x.shape)
+        x_numer, x_categ = torch.split(
+            x, [self.num_continuous, self.num_classes], dim=0
+        )
 
-        x = x[:, 0]
+        x_out = torch.cat(
+            [
+                projector(c)
+                for c, projector in zip(x_categ, self.categorical_embedder["proj_out"])
+            ],
+            dim=1,
+        )
 
-        # out in the paper is linear(relu(ln(cls)))
-
-        logits = self.to_logits(x)
+        if self.num_continuous > 0:
+            x_numer = torch.cat(
+                [
+                    projector(n)
+                    for n, projector in zip(
+                        x_numer, self.numerical_embedder["proj_out"]
+                    )
+                ],
+                dim=1,
+            )
+            x_out = torch.cat((x_numer, x_out), dim=1)
 
         if not return_attn:
-            return logits
+            return x_out
 
-        return logits, attns
+        return x_out, attns
