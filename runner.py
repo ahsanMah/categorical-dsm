@@ -70,8 +70,8 @@ def train(config, workdir):
             ],
         )
     
-    # wandb.watch(model, log_freq=config.training.snapshot_freq, log="all")
     wandb_logger = WandbLogger(log_model=False, save_dir="wandb")
+    wandb_logger.watch(model, log_freq=config.training.snapshot_freq, log="all")
     tb_logger = TensorBoardLogger(
         save_dir=f"{workdir}/tensorboard_logs/", name="", default_hp_metric=False
     )
