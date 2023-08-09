@@ -44,12 +44,12 @@ tabular_datasets = {
     "solar": "solar-flare_FvsAll-cleaned.arff",
     "cmc": "cmc-nominal.arff",
     "celeba": "list_attr_celeba_baldvsnonbald.arff",
-    "cars": "car_evaluation.csv"
+    "cars": "car_evaluation.csv",
+    "mushrooms": "mushrooms.csv",
 }
 
 
 def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=True):
-
     generator = torch.Generator().manual_seed(config.seed)
     dataset_name = config.data.dataset.lower()
     rootdir = "/tmp/datasets"
@@ -243,16 +243,17 @@ def load_dataset(name):
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
-    elif name in ["cars"]:
+    elif name in ["cars", "mushrooms"]:
         df = pd.read_csv(f"data/{tabular_datasets[name]}")
-        labels = df[label_name]
+        
+        if name == "cars":
+            labels = df[label_name]
+            drop_mask = np.logical_or(labels == "acc", labels == "good")
+            labels = labels[~drop_mask]
+            df = df[~drop_mask]
 
-        drop_mask = np.logical_or(labels == "acc", labels == "good")
-        labels = labels[~drop_mask]
-        df = df[~drop_mask]
-
-        df[label_name][labels=="unacc"] = "0"
-        df[label_name][labels=="vgood"] = "1"
+            df[label_name][labels == "unacc"] = "0"
+            df[label_name][labels == "vgood"] = "1"
 
     else:
         data, metadata = arff.loadarff(basedir + tabular_datasets[name])
@@ -291,7 +292,7 @@ def build_tabular_ds(name, return_logits=True):
         ]
     )
 
-    if name in ["probe"]:
+    if name in ["probe", "mushrooms"]:
         # Some categories only appear in outliers ...
         # so preprocessor needs to know them
         preprocessor.fit(X)
@@ -398,6 +399,7 @@ class TrainTransform(torch.nn.Module):
         self.transforms = MultiSequential(*trans)
         self.transforms = torch.jit.script(self.transforms)
         logging.info("Completed.")
+
         # self.to_onehot = partial(F.one_hot, num_classes=21)
         def build_one_hot_transform(to_logits=to_logits):
             if to_logits:
@@ -428,5 +430,3 @@ class TrainTransform(torch.nn.Module):
         target = self.to_onehot(target)
         img = torch.cat((img, target), dim=0)
         return img, 0
-
-

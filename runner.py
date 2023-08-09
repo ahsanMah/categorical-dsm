@@ -23,6 +23,10 @@ sns.set_theme()
 
 def train(config, workdir):
 
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.allow_tf32 = True
+    
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
 
@@ -32,6 +36,9 @@ def train(config, workdir):
         model = VisionScoreModel(config)
 
     train_loader, val_loader, test_loader = get_dataset(config)
+
+    #TODO: Add hyperprameters to workdir name
+
 
     # Checkpoint that saves periodically to allow for resuming later
     checkpoint_callback = ModelCheckpoint(
@@ -129,7 +136,7 @@ def eval(config, workdir, ckpt_num=-1):
         scorenet = TabScoreModel.load_from_checkpoint(
             checkpoint_path=os.path.join(ckpt_dir, ckpt), config=config
         ).cuda()
-        scorenet.eval()
+        scorenet.eval().requires_grad_(False)
 
         train_loader, val_loader, test_loader = get_dataset(config, train_mode=False)
         outdict = {}
