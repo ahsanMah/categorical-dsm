@@ -44,6 +44,7 @@ tabular_datasets = {
     "solar": "solar-flare_FvsAll-cleaned.arff",
     "cmc": "cmc-nominal.arff",
     "celeba": "list_attr_celeba_baldvsnonbald.arff",
+    "cars": "car_evaluation.csv"
 }
 
 
@@ -238,19 +239,30 @@ def load_dataset(name):
     # Anomaly: active
     basedir = "data/categorical_data_outlier_detection/"
     dataconfig = get_config(name)
-    label = dataconfig.label_column
+    label_name = dataconfig.label_column
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
+    elif name in ["cars"]:
+        df = pd.read_csv(f"data/{tabular_datasets[name]}")
+        labels = df[label_name]
+
+        drop_mask = np.logical_or(labels == "acc", labels == "good")
+        labels = labels[~drop_mask]
+        df = df[~drop_mask]
+
+        df[label_name][labels=="unacc"] = "0"
+        df[label_name][labels=="vgood"] = "1"
+
     else:
         data, metadata = arff.loadarff(basedir + tabular_datasets[name])
         df = pd.DataFrame(data).applymap(str_type)
 
     X = df.drop(
-        columns=label,
+        columns=label_name,
     )
-    y = np.zeros(len(df[label]), dtype=np.float32)
-    ano_idxs = df[label] == dataconfig.anomaly_label
+    y = np.zeros(len(df[label_name]), dtype=np.float32)
+    ano_idxs = df[label_name] == dataconfig.anomaly_label
     y[ano_idxs] = 1.0
     # print(y)
     return X, y.squeeze(), dataconfig
@@ -281,7 +293,7 @@ def build_tabular_ds(name, return_logits=True):
 
     if name in ["probe"]:
         # Some categories only appear in outliers ...
-        # so preprocessor needs to knwo them
+        # so preprocessor needs to know them
         preprocessor.fit(X)
     else:
         # Only fit on inliers
