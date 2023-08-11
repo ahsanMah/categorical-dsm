@@ -49,7 +49,7 @@ def get_config():
     optim.scheduler = "none"
 
     config.msma = msma = ml_collections.ConfigDict()
-    msma.denoise = True
+    msma.denoise = False
     msma.checkpoint = "best"
 
     config.devtest = False
