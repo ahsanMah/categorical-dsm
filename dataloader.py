@@ -1,6 +1,6 @@
 import logging
 
-# import pdb
+import pdb
 import os
 from typing import Tuple
 import numpy as np
@@ -46,6 +46,7 @@ tabular_datasets = {
     "celeba": "list_attr_celeba_baldvsnonbald.arff",
     "cars": "car_evaluation.csv",
     "mushrooms": "mushrooms.csv",
+    "nursery": "nursery.csv",
 }
 
 
@@ -200,7 +201,7 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=6,
+            num_workers=2,
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=8,
@@ -210,14 +211,14 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         val_ds = DataLoader(
             val_ds,
             batch_size=config.eval.batch_size,
-            num_workers=6,
+            num_workers=2,
             pin_memory=True,
         )
 
         test_ds = DataLoader(
             test_ds,
             batch_size=config.eval.batch_size,
-            num_workers=8,
+            num_workers=2,
             pin_memory=True,
         )
 
@@ -243,7 +244,7 @@ def load_dataset(name):
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
-    elif name in ["cars", "mushrooms"]:
+    elif name in ["cars", "mushrooms", "nursery"]:
         df = pd.read_csv(f"data/{tabular_datasets[name]}")
         
         if name == "cars":
@@ -252,8 +253,17 @@ def load_dataset(name):
             labels = labels[~drop_mask]
             df = df[~drop_mask]
 
-            df[label_name][labels == "unacc"] = "0"
-            df[label_name][labels == "vgood"] = "1"
+            # df[label_name][labels == "unacc"] = "0"
+            # df[label_name][labels == "vgood"] = "1"
+        
+        if name == "nursery":
+            labels = df[label_name]
+            drop_mask = np.logical_or(labels == "not_recom", labels == "very_recom")
+            labels = labels[drop_mask]
+            df = df[drop_mask]
+
+            # df[label_name][labels == "not_recom"] = "0"
+            # df[label_name][labels == "very_recom"] = "1"
 
     else:
         data, metadata = arff.loadarff(basedir + tabular_datasets[name])
@@ -272,6 +282,8 @@ def load_dataset(name):
 def build_tabular_ds(name, return_logits=True):
     X, y, dataconfig = load_dataset(name)
     to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
+    # to_logit = lambda x: np.log(np.clip(x*1e5, a_min=1e-5, a_max=1e5))
+
 
     categorical_columns_selector = selector(dtype_include=object)
     continuous_columns_selector = selector(dtype_include=[int, float])
@@ -292,7 +304,7 @@ def build_tabular_ds(name, return_logits=True):
         ]
     )
 
-    if name in ["probe", "mushrooms"]:
+    if name in ["probe", "mushrooms", "nursery"]:
         # Some categories only appear in outliers ...
         # so preprocessor needs to know them
         preprocessor.fit(X)
@@ -308,7 +320,7 @@ def build_tabular_ds(name, return_logits=True):
     ]
     assert categories == dataconfig.categories
     assert len(continuous_features) == dataconfig.numerical_features
-
+    # pdb.set_trace()
     X = preprocessor.transform(X)
 
     X = torch.from_numpy(X).float()
