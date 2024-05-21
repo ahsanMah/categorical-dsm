@@ -2,6 +2,7 @@
 # coding: utf-8
 
 import os
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import sys
 
@@ -17,6 +18,7 @@ if adbench_path not in sys.path:
 
 
 import tensorflow as tf
+
 physical_devices = tf.config.list_physical_devices("GPU")
 try:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -24,23 +26,26 @@ except:
     # Invalid device or cannot modify virtual devices once initialized.
     pass
 
-import torch
+import warnings
+
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader
-from ood_detection_helper import ood_metrics, auxiliary_model_analysis
+
 from dataloader import get_dataset
-import warnings
+from ood_detection_helper import auxiliary_model_analysis, ood_metrics
+
 warnings.filterwarnings("ignore")
 
 from configs import (
-    census_config,
-    solar_config,
-    chess_config,
     bank_config,
-    probe_config,
-    u2r_config,
+    census_config,
+    chess_config,
     cmc_config,
+    probe_config,
+    solar_config,
+    u2r_config,
 )
 
 DATASET = sys.argv[1]
@@ -69,19 +74,19 @@ workdir
 
 input_size = sum(config.data.categories) + config.data.numerical_features
 
+from collections import defaultdict
+from functools import partial
 from time import time
 
-# from adbench_minimal.baseline.DAGMM.run import DAGMM
-from DAGMM_pytorch.train import train as dagmm_train_runner
+from baseline.PyOD import PYOD
+from pyod.models.deep_svdd import DeepSVDD
+from torch.utils.data import DataLoader
 
 # from DAGMM_pytorch.test import decision_function as dagmm_clf
 from DAGMM_pytorch.test import main as dagmm_test_runner
-from pyod.models.deep_svdd import DeepSVDD
-from collections import defaultdict
-from baseline.PyOD import PYOD
-from functools import partial
-from torch.utils.data import DataLoader
 
+# from adbench_minimal.baseline.DAGMM.run import DAGMM
+from DAGMM_pytorch.train import train as dagmm_train_runner
 
 hyp = {
     "input_dim": input_size,
@@ -275,102 +280,3 @@ baseline_metrics = pd.concat(baseline_metrics)
 baseline_metrics.to_csv(f"results/{config.data.dataset}_baseline_metrics.csv")
 
 baseline_metrics[["roc_auc", "ap", "model"]].groupby("model").describe()
-
-
-# In[ ]:
-
-
-# baseline_metrics = pd.read_csv(f"results/{config.data.dataset}_baseline_metrics.csv", index_col=0)
-# baseline_metrics[["roc_auc", "ap", "model"]].groupby('model').describe()
-
-
-# # In[ ]:
-
-
-# all_metrics = []
-# for i in range(5):
-#     msma_results = get_msma_results(workdir, seed=i)
-#     all_metrics.append(msma_results)
-
-
-# # In[ ]:
-
-
-# gmm_metrics  = pd.concat(m["GMM"]["metrics"].reset_index(drop=True) for m in all_metrics
-#                         ).reset_index(drop=True)
-# gmm_metrics['seed'] = np.arange(5)
-# gmm_metrics['model'] = "MSMA-GMM"
-# gmm_metrics.describe()
-
-
-# # In[ ]:
-
-
-# kd_metrics  = pd.concat(m["KD"]["metrics"].reset_index(drop=True) for m in all_metrics
-#                        ).reset_index(drop=True)
-# kd_metrics['seed'] = np.arange(5)
-# kd_metrics['model'] = "MSMA-KD"
-# kd_metrics
-
-
-# # In[ ]:
-
-
-# kd_metrics.describe()
-
-
-# # In[ ]:
-
-
-# # save the results
-# df_metrics = pd.concat([gmm_metrics, kd_metrics])
-
-# for m,r in model_results.items():
-#     df = pd.DataFrame(r) * 100
-#     df["model"] = m
-#     df_metrics = pd.concat((df_metrics, df))
-
-# df_metrics[["roc_auc", "ap", "model"]].groupby('model').describe()
-
-
-# # In[ ]:
-
-
-# df_metrics.to_csv(f"results/{config.data.dataset}_final_metrics.csv")
-
-
-# # In[ ]:
-
-
-# df_stats = df_metrics.groupby('model').describe()
-
-# for metric in ["ap", "roc_auc"]:
-#     latex_str = [metric]
-#     df = df_stats.loc[["IForest","ECOD","DAGMM","DSVDD","MSMA-GMM"], metric]
-#     best =  df["mean"].max()
-#     for m in df[["mean", "std"]].values:
-#         _str = f"{m[0]:.2f} \pm~{m[1]:.2f}"
-#         if np.isclose(m[0], best):
-#             _str = "$\\mathbf{"+_str+"}$"
-#         latex_str.append(_str)
-#     latex_str = " & ".join(latex_str)
-#     print(latex_str)
-
-
-# # In[ ]:
-
-
-# df_melt = df_metrics.drop(columns="seed").melt(id_vars="model", var_name="metric")
-# df_melt
-
-
-# # In[ ]:
-
-
-# sns.catplot(data=df_melt.query("metric=='roc_auc'"), x="metric", y="value", hue="model", kind="bar")
-
-
-# # In[ ]:
-
-
-# sns.catplot(data=df_melt.query("metric=='ap'"), x="metric", y="value", hue="model", kind="bar")
