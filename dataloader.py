@@ -3,37 +3,37 @@ import logging
 # import pdb
 import os
 from typing import Tuple
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as T
+from PIL import Image
 from scipy.io import arff
 from sklearn.compose import ColumnTransformer
 from sklearn.compose import make_column_selector as selector
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 from torch.utils.data import (
-    DataLoader,
     ConcatDataset,
+    DataLoader,
     Subset,
     TensorDataset,
     random_split,
 )
-from torchvision.datasets import MNIST, FashionMNIST, Omniglot
-from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
-from torchvision.datasets import VOCSegmentation
+from torchvision.datasets import MNIST, FashionMNIST, Omniglot, VOCSegmentation
 from torchvision.models.segmentation import (
-    deeplabv3_mobilenet_v3_large,
     DeepLabV3_MobileNet_V3_Large_Weights,
+    deeplabv3_mobilenet_v3_large,
 )
-import torchvision.transforms as T
-from models.segmentation.presets import SegmentationTrain, SegmentationEval
-from configs.dataconfigs import get_config
-from models.mutils import onehot_to_logit
-from PIL import Image
+from torchvision.transforms import Compose, InterpolationMode, Lambda, Resize, ToTensor
 from tqdm.auto import tqdm
 
 import models.segmentation.module_transforms as SegT
+from configs.dataconfigs import get_config
+from models.mutils import onehot_to_logit
+from models.segmentation.presets import SegmentationEval, SegmentationTrain
 
 tabular_datasets = {
     "bank": "bank-additional-ful-nominal.arff",
@@ -43,7 +43,6 @@ tabular_datasets = {
     "u2r": "kddcup99-corrected-u2rvsnormal-nominal-cleaned.arff",
     "solar": "solar-flare_FvsAll-cleaned.arff",
     "cmc": "cmc-nominal.arff",
-    "celeba": "list_attr_celeba_baldvsnonbald.arff",
 }
 
 
@@ -279,7 +278,7 @@ def build_tabular_ds(name, return_logits=True):
         ]
     )
 
-    if name in ["probe"]:
+    if name in ["probe", 'nursery']:
         # Some categories only appear in outliers ...
         # so preprocessor needs to knwo them
         preprocessor.fit(X)
