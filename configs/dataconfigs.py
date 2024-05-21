@@ -89,6 +89,50 @@ def get_config(name):
     celeba.label_column = "class"
     celeba.anomaly_label = "1"
 
+    cars = ml_collections.ConfigDict()
+    cars.dataset = "cars"
+    cars.categories = [4, 4, 4, 3, 3, 3]
+    cars.numerical_features = 0
+    cars.label_column = "unacc"
+    cars.anomaly_label = "vgood"
+
+    mushrooms = ml_collections.ConfigDict()
+    mushrooms.dataset = "mushrooms"
+    mushrooms.categories = [
+        6,
+        4,
+        10,
+        2,
+        9,
+        2,
+        2,
+        2,
+        12,
+        2,
+        5,
+        4,
+        4,
+        9,
+        9,
+        1,
+        4,
+        3,
+        5,
+        9,
+        6,
+        7,
+    ]
+    mushrooms.numerical_features = 0
+    mushrooms.label_column = "class"
+    mushrooms.anomaly_label = "p"
+
+    nursery = ml_collections.ConfigDict()
+    nursery.dataset = "nursery"
+    nursery.categories = [3, 5, 4, 4, 3, 2, 3, 2]
+    nursery.numerical_features = 0
+    nursery.label_column = "final evaluation"
+    nursery.anomaly_label = "very_recom"
+
     config.census = census
     config.bank = bank
     config.chess = chess
@@ -97,5 +141,8 @@ def get_config(name):
     config.solar = solar
     config.cmc = cmc
     config.celeba = celeba
+    config.cars = cars
+    config.mushrooms = mushrooms
+    config.nursery = nursery
 
     return config[name]

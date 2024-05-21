@@ -10,7 +10,7 @@ from tqdm.auto import tqdm
 from sklearn.metrics import roc_curve
 from sklearn.metrics import classification_report, average_precision_score
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import KernelDensity, NearestNeighbors
 
 def result_dict(train_score, test_score, ood_scores, metrics):
     return {
@@ -75,7 +75,19 @@ def auxiliary_model_analysis(
 
     kd_results = result_dict(kd_train_score, kd_test_score, kd_ood_scores, kd_metrics)
 
-    return dict(GMM=gmm_results, KD=kd_results)
+    if verbose: print("=====" * 5 + " Training KDE Model " + "=====" * 5)
+    kde_model = KernelDensity(kernel='gaussian', bandwidth=2.5,
+                              algorithm="ball_tree").fit(X_train)
+    
+    kde_train_score = kde_model.score_samples(X_train) ## Likelihoods
+    kde_test_score  =  kde_model.score_samples(X_test)
+    kde_ood_scores = np.array([kde_model.score_samples(ood) for ood in outliers])
+    kde_metrics = get_metrics(-kde_test_score, -kde_ood_scores, labels)
+    kde_results = result_dict(
+        kde_train_score, kde_test_score, kde_ood_scores, kde_metrics
+    )
+
+    return dict(GMM=gmm_results, KD=kd_results, KDE=kde_results)
 
 
 def plot_curves(inlier_score, outlier_score, label, axs=()):
@@ -119,7 +131,7 @@ def plot_curves(inlier_score, outlier_score, label, axs=()):
     axs[1].legend()
 
     if len(axs) == 0:
-        fig.suptitle("{} vs {}".format(*labels), fontsize=20)
+        fig.suptitle("{} vs {}".format(*label), fontsize=20)
         plt.show()
         plt.close()
 

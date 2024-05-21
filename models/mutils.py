@@ -6,13 +6,20 @@ from models.tab_resnet import TabResNet
 from models.tab_mlp import TabMLP
 from models.resnext import ResNextpp
 from models.ncsnpp import NCSNpp
+from models.ft_transformer_pp import FTTransformer
 
 optimizers = {
     "Adam": torch.optim.Adam,
     "AdamW": torch.optim.AdamW,
     "RAdam": torch.optim.RAdam,
 }
-models = {"tab-resnet": TabResNet, "tab-mlp": TabMLP, "resnext": ResNextpp, "ncsn++": NCSNpp}
+models = {
+    "tab-transformer": FTTransformer,
+    "tab-resnet": TabResNet,
+    "tab-mlp": TabMLP,
+    "resnext": ResNextpp,
+    "ncsn++": NCSNpp,
+}
 
 
 """
@@ -67,7 +74,7 @@ def build_default_init_fn(scale=1.0):
 
             if module.bias is not None:
                 module.bias.data.zero_()
-            
+
             # print(f"Initialized {module.__class__.__name__} with {init_fn.__name__}.")
 
     return init_weights

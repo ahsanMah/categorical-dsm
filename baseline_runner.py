@@ -5,12 +5,12 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import sys
 
-module_path = os.path.abspath("/workspace/categorical-dsm/")
+module_path = os.path.abspath("/codespace/categorical-dsm/")
 if module_path not in sys.path:
     sys.path.append(module_path)
 os.chdir(module_path)
 
-adbench_path = "/workspace/categorical-dsm/adbench_minimal/"
+adbench_path = "/codespace/categorical-dsm/adbench_minimal/"
 if adbench_path not in sys.path:
     sys.path.append(adbench_path)
 # In[2]:
@@ -41,6 +41,9 @@ from configs import (
     probe_config,
     u2r_config,
     cmc_config,
+    cars_config,
+    mushrooms_config,
+    nursery_config
 )
 
 DATASET = sys.argv[1]
@@ -52,6 +55,9 @@ config_map = {
     "probe": probe_config,
     "u2r": u2r_config,
     "cmc": cmc_config,
+    "cars": cars_config,
+    "mushrooms": mushrooms_config,
+    "nursery": nursery_config
 }
 assert DATASET in config_map
 cfg = config_map[DATASET]
@@ -60,7 +66,7 @@ print("===" * 10, "Running baselines for:", config.data.dataset, "===" * 10)
 
 
 
-workdir = f"/workspace/categorical-dsm/results/{config.data.dataset}/"
+workdir = f"/codespace/categorical-dsm/results/{config.data.dataset}/"
 workdir
 
 
@@ -81,6 +87,11 @@ from collections import defaultdict
 from baseline.PyOD import PYOD
 from functools import partial
 from torch.utils.data import DataLoader
+
+
+torch.set_float32_matmul_precision("high")
+torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.allow_tf32 = True
 
 
 hyp = {
@@ -105,12 +116,12 @@ hyp = {
     "ratio": None,
     "patience_epochs": 10,
     "checkpoint": "best",
-    "return_logits":False,
+    "return_logits":True,
 }
 
 # Mostly taken from KDDCUP-Rev config from original DAGMM paper
 # Most other configs are unstable and frequently result in NaNs during training
-if config.data.dataset in ["probe", "u2r"]:
+if config.data.dataset in ["probe", "u2r", "mushrooms"]:
     hyp["hidden1_dim"] = 120
     hyp["hidden2_dim"] = 60
     hyp["hidden3_dim"] = 30
@@ -158,10 +169,10 @@ dsvdd_clf = partial(
 )
 
 model_dict = {
-    "DAGMM": dagmm_test_runner,
+#     "DAGMM": dagmm_test_runner,
     "IForest": PYOD,
     "ECOD": PYOD,
-    "DSVDD": dsvdd_clf,
+#     "DSVDD": dsvdd_clf,
 }
 
 model_list = list(model_dict.keys())
@@ -177,7 +188,8 @@ for idx in range(5):
     torch.manual_seed(config.seed)
 
     train_ds, val_ds, test_ds = get_dataset(
-        config, train_mode=False, return_logits=hyp["return_logits"], return_with_loader=False
+        config, train_mode=False, return_logits=hyp["return_logits"],
+        return_with_loader=False
     )
 
     train_loader = DataLoader(
@@ -217,7 +229,7 @@ for idx in range(5):
     y_labels = np.concatenate(y_labels)
     ano_ratio = sum(y_labels) / (len(y_train) + len(y_labels))
 
-    # X_train.shape, X_test.shape, y_labels.shape
+    print(X_train.shape, X_test.shape, y_labels.shape, ano_ratio)
 
     for name, clf in model_dict.items():
         print(f"Started: {name}")
@@ -227,7 +239,7 @@ for idx in range(5):
             # DAGMM has a bug where it produces NaNs at the last seed
             # We tested many models but they were always unstable for this dataset + seed
             # We decided to use the previous seed which would prduce a slightly bias result
-            if idx == 4 and config.data.dataset == "probe":
+            if idx == 4 and config.data.dataset in ["probe"]:
                 hyp["save_dir"] = f"./workdir/baselines/dagmm/{config.data.dataset}/seed_{idx-1}"
             else:
                 hyp["save_dir"] = f"./workdir/baselines/dagmm/{config.data.dataset}/seed_{idx}"
@@ -265,8 +277,8 @@ for idx in range(5):
 
 
 # save the results
+os.makedirs("results", exist_ok=True)
 baseline_metrics = []
-
 for m, r in model_results.items():
     df = pd.DataFrame(r) * 100
     df["model"] = m
@@ -274,7 +286,7 @@ for m, r in model_results.items():
 baseline_metrics = pd.concat(baseline_metrics)
 baseline_metrics.to_csv(f"results/{config.data.dataset}_baseline_metrics.csv")
 
-baseline_metrics[["roc_auc", "ap", "model"]].groupby("model").describe()
+print(baseline_metrics[["roc_auc", "ap", "model"]].groupby("model").describe())
 
 
 # In[ ]:

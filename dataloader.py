@@ -1,6 +1,6 @@
 import logging
 
-# import pdb
+import pdb
 import os
 from typing import Tuple
 import numpy as np
@@ -44,11 +44,13 @@ tabular_datasets = {
     "solar": "solar-flare_FvsAll-cleaned.arff",
     "cmc": "cmc-nominal.arff",
     "celeba": "list_attr_celeba_baldvsnonbald.arff",
+    "cars": "car_evaluation.csv",
+    "mushrooms": "mushrooms.csv",
+    "nursery": "nursery.csv",
 }
 
 
 def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=True):
-
     generator = torch.Generator().manual_seed(config.seed)
     dataset_name = config.data.dataset.lower()
     rootdir = "/tmp/datasets"
@@ -199,7 +201,7 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         train_ds = DataLoader(
             train_ds,
             batch_size=config.training.batch_size,
-            num_workers=6,
+            num_workers=2,
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=8,
@@ -209,14 +211,14 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
         val_ds = DataLoader(
             val_ds,
             batch_size=config.eval.batch_size,
-            num_workers=6,
+            num_workers=2,
             pin_memory=True,
         )
 
         test_ds = DataLoader(
             test_ds,
             batch_size=config.eval.batch_size,
-            num_workers=8,
+            num_workers=2,
             pin_memory=True,
         )
 
@@ -238,19 +240,40 @@ def load_dataset(name):
     # Anomaly: active
     basedir = "data/categorical_data_outlier_detection/"
     dataconfig = get_config(name)
-    label = dataconfig.label_column
+    label_name = dataconfig.label_column
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
+    elif name in ["cars", "mushrooms", "nursery"]:
+        df = pd.read_csv(f"data/{tabular_datasets[name]}")
+        
+        if name == "cars":
+            labels = df[label_name]
+            drop_mask = np.logical_or(labels == "acc", labels == "good")
+            labels = labels[~drop_mask]
+            df = df[~drop_mask]
+
+            # df[label_name][labels == "unacc"] = "0"
+            # df[label_name][labels == "vgood"] = "1"
+        
+        if name == "nursery":
+            labels = df[label_name]
+            drop_mask = np.logical_or(labels == "not_recom", labels == "very_recom")
+            labels = labels[drop_mask]
+            df = df[drop_mask]
+
+            # df[label_name][labels == "not_recom"] = "0"
+            # df[label_name][labels == "very_recom"] = "1"
+
     else:
         data, metadata = arff.loadarff(basedir + tabular_datasets[name])
         df = pd.DataFrame(data).applymap(str_type)
 
     X = df.drop(
-        columns=label,
+        columns=label_name,
     )
-    y = np.zeros(len(df[label]), dtype=np.float32)
-    ano_idxs = df[label] == dataconfig.anomaly_label
+    y = np.zeros(len(df[label_name]), dtype=np.float32)
+    ano_idxs = df[label_name] == dataconfig.anomaly_label
     y[ano_idxs] = 1.0
     # print(y)
     return X, y.squeeze(), dataconfig
@@ -259,6 +282,8 @@ def load_dataset(name):
 def build_tabular_ds(name, return_logits=True):
     X, y, dataconfig = load_dataset(name)
     to_logit = lambda x: np.log(np.clip(x, a_min=1e-5, a_max=1.0))
+    # to_logit = lambda x: np.log(np.clip(x*1e5, a_min=1e-5, a_max=1e5))
+
 
     categorical_columns_selector = selector(dtype_include=object)
     continuous_columns_selector = selector(dtype_include=[int, float])
@@ -279,9 +304,9 @@ def build_tabular_ds(name, return_logits=True):
         ]
     )
 
-    if name in ["probe"]:
+    if name in ["probe", "mushrooms", "nursery"]:
         # Some categories only appear in outliers ...
-        # so preprocessor needs to knwo them
+        # so preprocessor needs to know them
         preprocessor.fit(X)
     else:
         # Only fit on inliers
@@ -295,7 +320,7 @@ def build_tabular_ds(name, return_logits=True):
     ]
     assert categories == dataconfig.categories
     assert len(continuous_features) == dataconfig.numerical_features
-
+    # pdb.set_trace()
     X = preprocessor.transform(X)
 
     X = torch.from_numpy(X).float()
@@ -386,6 +411,7 @@ class TrainTransform(torch.nn.Module):
         self.transforms = MultiSequential(*trans)
         self.transforms = torch.jit.script(self.transforms)
         logging.info("Completed.")
+
         # self.to_onehot = partial(F.one_hot, num_classes=21)
         def build_one_hot_transform(to_logits=to_logits):
             if to_logits:
@@ -416,5 +442,3 @@ class TrainTransform(torch.nn.Module):
         target = self.to_onehot(target)
         img = torch.cat((img, target), dim=0)
         return img, 0
-
-

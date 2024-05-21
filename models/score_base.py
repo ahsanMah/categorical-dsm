@@ -95,13 +95,13 @@ class BaseScoreModel(pl.LightningModule):
                     pct_start=0.01,
                     anneal_strategy="cos",
                 )
-            elif self.optimization_opts.scheduler == "step":  # Dfaults to StepLR
+            elif self.optimization_opts.scheduler == "step":
                 scheduler = torch.optim.lr_scheduler.StepLR(
                     optimizer=optimizer,
                     step_size=int(0.4 * self.training_opts.n_steps),
                     gamma=0.3,
                 )
-            elif self.optimization_opts.scheduler == "cosine":  # Dfaults to StepLR
+            elif self.optimization_opts.scheduler == "cosine":
                 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                     optimizer=optimizer,
                     T_max=self.training_opts.n_steps,
