@@ -225,9 +225,6 @@ def get_dataset(config, train_mode=True, return_with_loader=True, return_logits=
 def load_dataset(name):
     str_type = lambda x: str(x, "utf-8")
 
-    if name in ["adult"]:
-        return pd.read_csv(f"data/{name}.csv").dropna()
-
     # AD_nominal
     # dtype = all categorical
     # Anomaly: AD
@@ -241,6 +238,12 @@ def load_dataset(name):
 
     if name == "census":
         df = pd.read_pickle(basedir + tabular_datasets[name])
+    elif name == "nursery":
+        df = pd.read_csv(f"data/nursery.csv")
+        labels = df[label]
+        drop_mask = np.logical_or(labels == "not_recom", labels == "very_recom")
+        labels = labels[drop_mask]
+        df = df[drop_mask]
     else:
         data, metadata = arff.loadarff(basedir + tabular_datasets[name])
         df = pd.DataFrame(data).applymap(str_type)
