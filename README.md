@@ -1,5 +1,6 @@
-# categorical-dsm
-Denoising Score Matching for Categorical Data
+# Denoising Score Matching for Categorical Data
+
+This is the official repo for the work [Anomaly Detection via Gumbel Noise Score Matching](https://www.frontiersin.org/articles/10.3389/frai.2024.1441205). If you use this repository for research purposes, please cite our work using the citation at the end of this document.
 
 ## Training on a new dataset
 
@@ -216,3 +217,17 @@ python main.py --config=configs/my_experiment_config.py --mode=train --workdir=/
 6. Use the `devtest` flag in the configuration for quick testing of your setup before running full experiments.
 
 Remember that changes to the configuration structure might require corresponding updates in the `runner.py` file to ensure all new parameters are properly utilized during training.
+
+# Citing
+```
+@article{10.3389/frai.2024.1441205,
+   AUTHOR={Mahmood, Ahsan  and Oliva, Junier  and Styner, Martin A.},
+   TITLE={Anomaly Detection via Gumbel Noise Score Matching},
+   JOURNAL={Frontiers in Artificial Intelligence},
+   VOLUME={7},
+   YEAR={2024},
+   URL={https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2024.1441205},
+   DOI={10.3389/frai.2024.1441205},
+   ISSN={2624-8212},
+}
+```
